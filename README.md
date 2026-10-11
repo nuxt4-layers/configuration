@@ -1,1 +1,1 @@
-# configuration-service
+# @nuxt4-layers/configuration-service
