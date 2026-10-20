@@ -3,7 +3,7 @@ import { dirname, join, normalize, relative } from 'node:path'
 import { z } from 'zod'
 import { describe, expect, it } from 'vitest'
 import { toPosix } from './support/paths'
-import * as contracts from '../contracts'
+import * as contracts from '../shared/contracts'
 
 const root = normalize(join(import.meta.dirname, '..'))
 
@@ -19,14 +19,14 @@ function imports(file: string): string[] {
     specifier!.startsWith('.') ? toPosix(relative(root, join(root, dirname(file), specifier!))) : specifier!)
 }
 
-const contractFiles = [...files('contracts'), ...files('shared')]
+const contractFiles = files('shared')
 const catalogue = contracts.buildConfigurationCatalogue(contracts.CONFIGURATION_SETTINGS)
 
 describe('Configuration public contract', () => {
   it('imports nothing but zod and its own modules', () => {
     for (const file of contractFiles) {
       for (const target of imports(file)) {
-        expect(target === 'zod' || /^(contracts|shared)\//.test(target), `${file} imports ${target}`).toBe(true)
+        expect(target === 'zod' || /^shared\//.test(target), `${file} imports ${target}`).toBe(true)
       }
     }
   })

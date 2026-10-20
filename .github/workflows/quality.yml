@@ -54,6 +54,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm dev:prepare
       - run: pnpm check
+      - run: pnpm build:playground
 
   # Gate for the `quality` status check that the master ruleset requires of
   # every repository. It passes only when every check above has passed.

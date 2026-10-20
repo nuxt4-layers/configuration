@@ -51,6 +51,11 @@ export const countryCodeSchema = z.string().regex(/^[A-Z]{2}$/, 'not-a-country-c
 /** A code chosen from a host's or the layer's list: `mastodon`, `gb-vat`. */
 export const codeSchema = z.string().max(64).regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/, 'not-a-code')
 
+/** A host name, lower case, as a tenant answers on: `acme.example.org`. No scheme, port or path. */
+export const hostNameSchema = z.string()
+  .overwrite(value => value.trim().toLowerCase())
+  .regex(/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/, 'not-a-host-name')
+
 /** A reference to a file in the host's asset store, with its alternative text. */
 export const assetReferenceSchema = z.strictObject({
   assetId: z.string().min(1).max(200).regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/, 'not-an-asset-id'),

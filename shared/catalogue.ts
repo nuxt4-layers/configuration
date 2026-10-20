@@ -8,6 +8,7 @@ import {
   contactPointSchema,
   emailSchema,
   httpsUrlSchema,
+  hostNameSchema,
   linkSchema,
   localeSchema,
   phoneNumberSchema,
@@ -25,6 +26,16 @@ export const SOCIAL_NETWORKS = ['bluesky', 'facebook', 'github', 'instagram', 'l
 
 export const CONFIGURATION_SETTINGS: readonly ConfigurationSettingDeclaration[] = [
   defineConfigurationSetting({ key: 'site.name', schema: safeTextSchema({ max: 80 }), scopes: ABOVE_GROUPS, visibility: 'public', sensitivity: 'organisational', risk: 'medium' }),
+  // The host names a tenant answers on: requests to them resolve to the tenant.
+  // Unique across tenants; never served over HTTP.
+  defineConfigurationSetting({
+    key: 'site.host-names',
+    schema: z.array(hostNameSchema).min(1).max(10).refine(names => new Set(names).size === names.length, 'duplicate-host-name'),
+    scopes: ['tenant'],
+    visibility: 'server',
+    sensitivity: 'organisational',
+    risk: 'high',
+  }),
   defineConfigurationSetting({ key: 'site.tagline', schema: safeTextSchema({ max: 160 }), scopes: ALL, visibility: 'public', sensitivity: 'organisational', risk: 'low' }),
   defineConfigurationSetting({ key: 'site.default-locale', schema: localeSchema, scopes: ABOVE_GROUPS, visibility: 'public', sensitivity: 'organisational', risk: 'medium', default: 'en-GB' }),
   defineConfigurationSetting({ key: 'site.logo', schema: assetReferenceSchema, scopes: ALL, visibility: 'public', sensitivity: 'organisational', risk: 'medium' }),

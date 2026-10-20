@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { describe, expect, it } from 'vitest'
-import { buildConfigurationCatalogue, CONFIGURATION_SETTINGS, resolveConfiguration } from '../contracts'
+import { buildConfigurationCatalogue, CONFIGURATION_SETTINGS, resolveConfiguration } from '../shared/contracts'
 
 const catalogue = buildConfigurationCatalogue(CONFIGURATION_SETTINGS, [
   { key: 'shop.currency', schema: z.string(), scopes: ['platform', 'tenant', 'group'], inherits: 'none', visibility: 'public', sensitivity: 'organisational', risk: 'low', default: 'GBP' },

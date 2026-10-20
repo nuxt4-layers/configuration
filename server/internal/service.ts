@@ -19,7 +19,7 @@ import type {
   ConfigurationValues,
   ConfigurationVisibility,
   PostgresPoolLike,
-} from '../../contracts'
+} from '../../shared/contracts'
 import {
   canonicalJson,
   configurationChangeRequestSchema,
@@ -38,7 +38,7 @@ import {
   SCOPE_RISK_FLOOR,
   subjectSchema,
   VIEW_PERMISSION,
-} from '../../contracts'
+} from '../../shared/contracts'
 import { quoteSchema } from '../database/migrations'
 import { timeFrom, uuidv7 } from './clock'
 
@@ -333,6 +333,74 @@ export function createConfigurationService(deps: ServiceDependencies) {
     return Object.entries(expected).some(([key, digest]) => (current.get(key) ?? null) !== digest)
   }
 
+  const HOST_NAMES = 'site.host-names'
+
+  /** Whether another tenant already answers on any of these host names. Serialised by an advisory lock. */
+  async function hostTaken(client: Client, tenantId: string, names: unknown): Promise<boolean> {
+    if (!Array.isArray(names)) return false
+    await client.query('select pg_advisory_xact_lock(hashtext($1))', ['configuration:host-names'])
+    const { rows } = await client.query(
+      `select 1 from ${s}."value" where "scope" = 'tenant' and "key" = $1 and "scope_id" <> $2 and "value" ?| $3::text[] limit 1`,
+      [HOST_NAMES, tenantId, names],
+    )
+    return rows.length > 0
+  }
+
+  /** The tenant a request's host name resolves to, or `null` (platform values only). */
+  async function tenantForHost(host: string): Promise<string | null> {
+    const name = host.trim().toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '')
+    if (!/^[a-z0-9.-]{1,253}$/.test(name)) return null
+    const { rows } = await query(`select "scope_id" from ${s}."value" where "scope" = 'tenant' and "key" = $1 and "value" @> $2::jsonb limit 1`, [HOST_NAMES, JSON.stringify([name])])
+    return (rows[0]?.scope_id as string | undefined) ?? null
+  }
+
+  /**
+   * The values a viewer may read (§5). Anonymous viewers get `public`
+   * platform and tenant values, never a group's. A signed-in viewer gets
+   * `members` values of a tenant they are a member of; for a group of the
+   * request's tenant, `members` values as its member or with
+   * `configuration.settings:view` on it, `public` ones as a member of the
+   * tenant, otherwise `forbidden`.
+   */
+  async function readForViewer(input: { subject: ConfigurationSubject | null, tenantId: string | null, groupId?: string }) {
+    const tenantId = input.tenantId ?? undefined
+    if (!input.subject) {
+      if (input.groupId !== undefined) throw new ConfigurationFailure('unauthenticated')
+      return getConfiguration({ tenantId, visibility: 'public' })
+    }
+    const subject = parse(() => subjectSchema.parse(input.subject)) as ConfigurationSubject
+    const actor = await port(() => deps.directory().describeActor(subject.identityId, { consistency: 'bounded' }))
+    const memberships = actor?.memberships ?? []
+    const memberOfTenant = tenantId === undefined || memberships.some(membership => membership.tenantId === tenantId)
+    if (input.groupId === undefined) return getConfiguration({ tenantId, visibility: memberOfTenant ? 'members' : 'public' })
+    const groupId = parse(() => identifierSchema.parse(input.groupId))
+    if (tenantId === undefined) throw new ConfigurationFailure('forbidden')
+    const group = await port(() => deps.directory().describeGroup(groupId, { consistency: 'bounded' }))
+    if (!group || group.kind !== 'standard' || group.state === 'deleted' || group.tenantId !== tenantId) throw new ConfigurationFailure('forbidden')
+    const visibility: ConfigurationVisibility | null = memberships.some(membership => membership.groupId === groupId) || await port(() => deps.access().allows({ identityId: subject.identityId, permission: VIEW_PERMISSION, groupId, consistency: 'bounded' }))
+      ? 'members'
+      : memberships.some(membership => membership.tenantId === tenantId) ? 'public' : null
+    if (!visibility) throw new ConfigurationFailure('forbidden')
+    const answer = await getConfiguration({ groupId, visibility })
+    if (!answer) throw new ConfigurationFailure('forbidden')
+    return answer
+  }
+
+  /**
+   * Over HTTP, a request reaches only its own tenant's scopes and changes
+   * (and the platform's). `undefined` is server code, which is not confined.
+   */
+  function confine(scopeTenantId: string | null, requestTenantId: string | null | undefined): void {
+    if (requestTenantId === undefined || scopeTenantId === null) return
+    if (scopeTenantId !== requestTenantId) throw new ConfigurationFailure('forbidden')
+  }
+
+  /** `configuration.settings:view` on the scope's governing group, which must govern it (§7.1). */
+  async function requireViewer(located: Located, subject: ConfigurationSubject): Promise<void> {
+    if (located.scope === 'tenant' && !await governed(located, subject.identityId, uuidv7(now().getTime()))) throw new ConfigurationFailure('forbidden')
+    if (!await allows(subject.identityId, VIEW_PERMISSION, located.governingGroupId)) throw new ConfigurationFailure('forbidden')
+  }
+
   // ---------------------------------------------------------------- changes
 
   function view(row: ChangeRow, approvals: { approver_id: string, decision: 'approve' | 'reject', decided_at: Date }[]): ConfigurationChange {
@@ -410,6 +478,7 @@ export function createConfigurationService(deps: ServiceDependencies) {
     if (riskRank(risk) > riskRank(row.risk)) return reject('risk-raised')
     await lockScope(client, row.scope, row.scope_id)
     if (await valuesChanged(client, row.scope, row.scope_id, row.expected)) return reject('values-changed')
+    if (row.tenant_id && await hostTaken(client, row.tenant_id, row.set[HOST_NAMES])) return reject('host-taken')
 
     const catalogue = deps.catalogue()
     const previous = await storedValues(client, [{ scope: row.scope, scopeId: row.scope_id }], true)
@@ -445,7 +514,7 @@ export function createConfigurationService(deps: ServiceDependencies) {
   }
 
   /** §6: requests a change; it applies at once when no approver is needed. */
-  async function request(input: { subject: ConfigurationSubject, request: unknown, correlationId: string }): Promise<ConfigurationChange> {
+  async function request(input: { subject: ConfigurationSubject, request: unknown, correlationId: string, tenantId?: string | null }): Promise<ConfigurationChange> {
     const subject = parse(() => subjectSchema.parse(input.subject)) as ConfigurationSubject
     const correlationId = parse(() => correlationIdSchema.parse(input.correlationId))
     const requested = parse(() => configurationChangeRequestSchema.parse(input.request))
@@ -453,6 +522,7 @@ export function createConfigurationService(deps: ServiceDependencies) {
     if (checked.problem) throw new ConfigurationFailure('validation-failed', checked.problem)
 
     const located = await locate(requested.target)
+    confine(located.tenantId, input.tenantId)
     await requirePerson(subject)
     const group = await governed(located, subject.identityId, correlationId)
     if (!group) throw new ConfigurationFailure('forbidden')
@@ -521,6 +591,7 @@ export function createConfigurationService(deps: ServiceDependencies) {
     return transaction(async (client) => {
       await lockScope(client, row.scope, row.scope_id)
       if (await valuesChanged(client, row.scope, row.scope_id, row.expected)) throw new ConfigurationFailure('conflict', 'values-changed')
+      if (row.tenant_id && await hostTaken(client, row.tenant_id, row.set[HOST_NAMES])) throw new ConfigurationFailure('conflict', 'host-taken')
       await client.query(
         `insert into ${s}."change" ("change_id", "scope", "scope_id", "tenant_id", "governing_group_id", "requester_id", "controlled_ids", "risk", "route", "required_approvals", "group_requirement", "owner_group_id", "set", "expected", "justification", "digest", "status", "requested_at", "expires_at", "applies_at", "held_until", "correlation_id")
          values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13::jsonb, $14::jsonb, $15::jsonb, $16, $17, $18, $19, $20, $21, $22)`,
@@ -552,7 +623,7 @@ export function createConfigurationService(deps: ServiceDependencies) {
   }
 
   /** §7.4: approves or rejects the change the approver was shown. */
-  async function decide(input: { subject: ConfigurationSubject, changeId: string, changeDigest: string, decision: 'approve' | 'reject', correlationId: string }): Promise<ConfigurationChange> {
+  async function decide(input: { subject: ConfigurationSubject, changeId: string, changeDigest: string, decision: 'approve' | 'reject', correlationId: string, tenantId?: string | null }): Promise<ConfigurationChange> {
     const subject = parse(() => subjectSchema.parse(input.subject)) as ConfigurationSubject
     const changeId = parse(() => identifierSchema.parse(input.changeId))
     const shown = parse(() => digestSchema.parse(input.changeDigest))
@@ -562,6 +633,7 @@ export function createConfigurationService(deps: ServiceDependencies) {
     return transaction(async (client) => {
       const row = await loadChange(client, changeId, true)
       if (!row) throw new ConfigurationFailure('forbidden')
+      confine(row.tenant_id, input.tenantId)
       const isRequester = row.requester_id === subject.identityId
       if (!isRequester && !await mayDecide(row, subject.identityId)) throw new ConfigurationFailure('forbidden')
       if (isRequester) throw new ConfigurationFailure('conflict', 'own-request')
@@ -583,13 +655,14 @@ export function createConfigurationService(deps: ServiceDependencies) {
   }
 
   /** The requester cancels an open change; nobody else may. */
-  async function cancel(input: { subject: ConfigurationSubject, changeId: string, correlationId: string }): Promise<ConfigurationChange> {
+  async function cancel(input: { subject: ConfigurationSubject, changeId: string, correlationId: string, tenantId?: string | null }): Promise<ConfigurationChange> {
     const subject = parse(() => subjectSchema.parse(input.subject)) as ConfigurationSubject
     const changeId = parse(() => identifierSchema.parse(input.changeId))
     parse(() => correlationIdSchema.parse(input.correlationId))
     return transaction(async (client) => {
       const row = await loadChange(client, changeId, true)
       if (!row || row.requester_id !== subject.identityId) throw new ConfigurationFailure('forbidden')
+      confine(row.tenant_id, input.tenantId)
       if (!OPEN.includes(row.status)) throw new ConfigurationFailure('conflict', 'not-open')
       await finish(client, row, 'cancelled', null, now(), subject.identityId)
       return view(row, await loadApprovals(client, row.change_id))
@@ -597,11 +670,12 @@ export function createConfigurationService(deps: ServiceDependencies) {
   }
 
   /** §7.7: the requester, whoever may decide, and whoever may view the governing group's settings. */
-  async function get(input: { subject: ConfigurationSubject, changeId: string }): Promise<ConfigurationChange> {
+  async function get(input: { subject: ConfigurationSubject, changeId: string, tenantId?: string | null }): Promise<ConfigurationChange> {
     const subject = parse(() => subjectSchema.parse(input.subject)) as ConfigurationSubject
     const changeId = parse(() => identifierSchema.parse(input.changeId))
     const row = await loadChange({ query }, changeId)
     if (!row) throw new ConfigurationFailure('forbidden')
+    confine(row.tenant_id, input.tenantId)
     const may = row.requester_id === subject.identityId
       || await allows(subject.identityId, VIEW_PERMISSION, row.governing_group_id)
       || (OPEN.includes(row.status) && await mayDecide(row, subject.identityId))
@@ -614,10 +688,11 @@ export function createConfigurationService(deps: ServiceDependencies) {
    * digests (the `expected` of a request), the values in force, and its open
    * changes. Needs `configuration.settings:view` on the governing group.
    */
-  async function readScope(input: { subject: ConfigurationSubject, target: ConfigurationChangeTarget }) {
+  async function readScope(input: { subject: ConfigurationSubject, target: ConfigurationChangeTarget, tenantId?: string | null }) {
     const subject = parse(() => subjectSchema.parse(input.subject)) as ConfigurationSubject
     const located = await locate(input.target)
-    if (!await allows(subject.identityId, VIEW_PERMISSION, located.governingGroupId)) throw new ConfigurationFailure('forbidden')
+    confine(located.tenantId, input.tenantId)
+    await requireViewer(located, subject)
     const stored = (await storedValues({ query }, [{ scope: located.scope, scopeId: located.scopeId }])).get(`${located.scope}:${located.scopeId}`)!
     const inForce = located.scope === 'platform'
       ? await getConfiguration({ visibility: 'members' })
@@ -633,10 +708,11 @@ export function createConfigurationService(deps: ServiceDependencies) {
   }
 
   /** §8: what applied changes did at a scope, newest first. */
-  async function listHistory(input: { subject: ConfigurationSubject, target: ConfigurationChangeTarget, limit?: number }) {
+  async function listHistory(input: { subject: ConfigurationSubject, target: ConfigurationChangeTarget, limit?: number, tenantId?: string | null }) {
     const subject = parse(() => subjectSchema.parse(input.subject)) as ConfigurationSubject
     const located = await locate(input.target)
-    if (!await allows(subject.identityId, VIEW_PERMISSION, located.governingGroupId)) throw new ConfigurationFailure('forbidden')
+    confine(located.tenantId, input.tenantId)
+    await requireViewer(located, subject)
     const { rows } = await query(`select "change_id", "key", "previous", "next", "applied_at" from ${s}."history" where "scope" = $1 and "scope_id" = $2 order by "sequence" desc limit $3`, [located.scope, located.scopeId, Math.min(Math.max(input.limit ?? 100, 1), 500)])
     return rows.map(row => ({ changeId: row.change_id as string, key: row.key as string, previous: row.previous, next: row.next, appliedAt: (row.applied_at as Date).toISOString() }))
   }
@@ -722,6 +798,8 @@ export function createConfigurationService(deps: ServiceDependencies) {
 
   return {
     getConfiguration,
+    tenantForHost,
+    readForViewer,
     changes: { request, decide, cancel, get, readScope },
     listHistory,
     runMaintenance,

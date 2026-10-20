@@ -1,4 +1,4 @@
-import type { PostgresPoolLike } from '../../contracts'
+import type { PostgresPoolLike } from '../../shared/contracts'
 
 /**
  * PRIVATE. Versioned, append-only migrations for Configuration's schema
@@ -92,6 +92,13 @@ create table {{schema}}."outbox" (
   "published_at" timestamptz
 );
 create index "outbox_unpublished_idx" on {{schema}}."outbox" ("sequence") where "published_at" is null;
+`,
+  },
+  {
+    // Requests resolve their tenant from the host name (docs/contracts.md §4.1).
+    id: '0002_host_names',
+    sql: `
+create index "value_host_names_idx" on {{schema}}."value" using gin ("value" jsonb_path_ops) where "key" = 'site.host-names';
 `,
   },
 ]

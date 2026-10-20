@@ -1,5 +1,5 @@
-import type { ConfigurationChangeTarget, ConfigurationEvent, ConfigurationSubject, ConfigurationVisibility } from '../../contracts'
-import { ConfigurationCompositionError, ConfigurationFailure } from '../../contracts'
+import type { ConfigurationChangeTarget, ConfigurationEvent, ConfigurationSubject, ConfigurationVisibility } from '../../shared/contracts'
+import { ConfigurationCompositionError, ConfigurationFailure } from '../../shared/contracts'
 import { runConfigurationMigrations } from '../database/migrations'
 import type { ConfigurationService } from '../internal/service'
 import { createConfigurationService } from '../internal/service'
@@ -64,6 +64,16 @@ export async function migrateConfigurationDatabase(): Promise<string[]> {
   return runConfigurationMigrations(database.migrationPool ?? database.pool, database.schema, database.runtimeRole)
 }
 
+/** The tenant a request's host name resolves to, or `null`. */
+export function getConfigurationTenantForHost(host: string) {
+  return service().tenantForHost(host)
+}
+
+/** The values a viewer may read (anonymous: public platform and tenant values only). */
+export function readConfigurationForViewer(input: { subject: ConfigurationSubject | null, tenantId: string | null, groupId?: string }) {
+  return service().readForViewer(input)
+}
+
 /** The values in force with provenance; server code passes `visibility: 'server'`. */
 export function getConfiguration(input: { tenantId?: string, groupId?: string, keys?: readonly string[], visibility: ConfigurationVisibility }) {
   return service().getConfiguration(input)
@@ -74,7 +84,7 @@ export function getConfigurationChanges() {
   return service().changes
 }
 
-export function listConfigurationHistory(input: { subject: ConfigurationSubject, target: ConfigurationChangeTarget, limit?: number }) {
+export function listConfigurationHistory(input: { subject: ConfigurationSubject, target: ConfigurationChangeTarget, limit?: number, tenantId?: string | null }) {
   return service().listHistory(input)
 }
 

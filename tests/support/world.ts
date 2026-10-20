@@ -5,7 +5,7 @@ import type {
   ConfigurationRisk,
   ConfigurationSubject,
   ConfigurationTenants,
-} from '../../contracts'
+} from '../../shared/contracts'
 
 /**
  * Stand-ins for Identity's and Authorisation's ports, held in memory, so the
@@ -41,6 +41,8 @@ export class World {
   /** permission → groupId → holders */
   readonly holders = new Map<string, Map<string, Set<string>>>()
   readonly services = new Set<string>()
+  /** identityId → memberships in effect */
+  readonly memberships = new Map<string, { groupId: string, tenantId: string }[]>()
   readonly recoveryHolds = new Map<string, string>()
   readonly controlled = new Map<string, string[]>()
   readonly risks = new Map<string, ConfigurationRisk>()
@@ -77,6 +79,12 @@ export class World {
     this.holders.get(permission)?.get(groupId)?.delete(identityId)
   }
 
+  join(identityId: string, groupId: string): void {
+    const list = this.memberships.get(identityId) ?? []
+    list.push({ groupId, tenantId: this.groups.get(groupId)!.tenantId })
+    this.memberships.set(identityId, list)
+  }
+
   own(identityId: string, groupId: string): void {
     const set = this.owners.get(groupId) ?? new Set<string>()
     this.owners.set(groupId, set)
@@ -95,7 +103,7 @@ export class World {
     },
     describeActor: async (identityId) => {
       this.check()
-      return { identityId, kind: this.services.has(identityId) ? 'service' : 'person', memberships: [] }
+      return { identityId, kind: this.services.has(identityId) ? 'service' : 'person', memberships: this.memberships.get(identityId) ?? [] }
     },
   }
 

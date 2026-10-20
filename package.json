@@ -1,6 +1,6 @@
 {
   "name": "@nuxt4-layers/configuration-service",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Nuxt 4 foundation layer for the facts a site, a tenant or a group states about itself, changed only through approved pending changes.",
@@ -11,21 +11,23 @@
   },
   "exports": {
     ".": "./nuxt.config.ts",
-    "./contracts": "./contracts/index.ts"
+    "./contracts": "./shared/contracts.ts"
   },
   "files": [
     "server",
     "shared",
-    "contracts",
     "nuxt.config.ts",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "app"
   ],
   "scripts": {
     "dev:prepare": "nuxt prepare",
     "typecheck": "nuxt typecheck",
     "test": "vitest run",
-    "check": "pnpm typecheck && pnpm test"
+    "check": "pnpm typecheck && pnpm test",
+    "build:playground": "nuxt build playground",
+    "dev": "nuxt dev playground"
   },
   "dependencies": {
     "zod": "^4.6.5"
@@ -36,6 +38,7 @@
   "devDependencies": {
     "@types/node": "^24.13.6",
     "@types/pg": "^8.23.1",
+    "h3": "^1.15.11",
     "nuxt": "^4.5.2",
     "pg": "^8.23.1",
     "typescript": "^6.0.3",

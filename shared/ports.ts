@@ -1,3 +1,4 @@
+import type { ConfigurationSubject } from './changes'
 import type { ConfigurationRisk } from './settings'
 
 /**
@@ -91,6 +92,14 @@ export interface ConfigurationAccessDecision {
   countQualifying(input: { permission: string, groupId: string, excluding: readonly string[] }): Promise<number>
   /** The permission's risk in the host's catalogue. */
   riskOf(permission: string): Promise<ConfigurationRisk>
+}
+
+/**
+ * Who is signed in, for an HTTP request (an h3 event, typed loosely so the
+ * contract needs no server package). `null` when nobody is.
+ */
+export interface ConfigurationSubjectResolver {
+  resolve(event: unknown): Promise<ConfigurationSubject | null>
 }
 
 export interface ConfigurationClock {

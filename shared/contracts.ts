@@ -14,16 +14,16 @@ export {
   REASON_CODE_PATTERN,
   UUID_PATTERN,
   UUID_V7_PATTERN,
-} from '../shared/identifiers'
+} from './identifiers'
 
-export type { ConfigurationConflictReason, ConfigurationErrorCode } from '../shared/errors'
+export type { ConfigurationConflictReason, ConfigurationErrorCode } from './errors'
 export {
   ConfigurationCompositionError,
   ConfigurationFailure,
   CONFIGURATION_CONFLICT_REASONS,
   CONFIGURATION_ERROR_CODES,
   CONFIGURATION_ERROR_STATUS,
-} from '../shared/errors'
+} from './errors'
 
 export {
   assetReferenceSchema,
@@ -31,6 +31,7 @@ export {
   contactPointSchema,
   countryCodeSchema,
   emailSchema,
+  hostNameSchema,
   httpsUrlSchema,
   linkSchema,
   localeSchema,
@@ -38,7 +39,7 @@ export {
   postalAddressSchema,
   safeTextSchema,
   sitePathSchema,
-} from '../shared/values'
+} from './values'
 
 export type {
   ConfigurationCatalogue,
@@ -47,7 +48,7 @@ export type {
   ConfigurationSensitivity,
   ConfigurationSettingDeclaration,
   ConfigurationVisibility,
-} from '../shared/settings'
+} from './settings'
 export {
   buildConfigurationCatalogue,
   CONFIGURATION_RISKS,
@@ -60,9 +61,9 @@ export {
   riskRank,
   SETTING_KEY_PATTERN,
   settingKeySchema,
-} from '../shared/settings'
+} from './settings'
 
-export { CONFIGURATION_SETTINGS, SOCIAL_NETWORKS } from '../shared/catalogue'
+export { CONFIGURATION_SETTINGS, SOCIAL_NETWORKS } from './catalogue'
 
 export type {
   ConfigurationAnswer,
@@ -70,8 +71,8 @@ export type {
   ConfigurationProvenance,
   ConfigurationScopeReference,
   ConfigurationValues,
-} from '../shared/scopes'
-export { resolveConfiguration, scopeReferenceSchema, visibilityRank } from '../shared/scopes'
+} from './scopes'
+export { resolveConfiguration, scopeReferenceSchema, visibilityRank } from './scopes'
 
 export type {
   ConfigurationAssurance,
@@ -81,7 +82,7 @@ export type {
   ConfigurationChangeStatus,
   ConfigurationChangeTarget,
   ConfigurationSubject,
-} from '../shared/changes'
+} from './changes'
 export {
   APPROVAL_FLOOR,
   canonicalJson,
@@ -95,13 +96,13 @@ export {
   meetsStepUp,
   requiredApprovals,
   subjectSchema,
-} from '../shared/changes'
+} from './changes'
 
-export type { ConfigurationEvent, ConfigurationEventType } from '../shared/events'
-export { configurationEventSchema } from '../shared/events'
+export type { ConfigurationEvent, ConfigurationEventType } from './events'
+export { configurationEventSchema } from './events'
 
-export type { ConfigurationPermission } from '../shared/permissions'
-export { CONFIGURATION_PERMISSIONS, MANAGE_PERMISSION, SCOPE_RISK_FLOOR, VIEW_PERMISSION } from '../shared/permissions'
+export type { ConfigurationPermission } from './permissions'
+export { CONFIGURATION_PERMISSIONS, MANAGE_PERMISSION, SCOPE_RISK_FLOOR, VIEW_PERMISSION } from './permissions'
 
 export type {
   ConfigurationAccessDecision,
@@ -113,7 +114,8 @@ export type {
   ConfigurationGovernedGroup,
   ConfigurationGroupFacts,
   ConfigurationSafetyPeriods,
+  ConfigurationSubjectResolver,
   ConfigurationTenants,
   Consistency,
   PostgresPoolLike,
-} from '../shared/ports'
+} from './ports'
