@@ -1,6 +1,6 @@
 {
   "name": "@nuxt4-layers/configuration-service",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Nuxt 4 foundation layer for the facts a site, a tenant or a group states about itself, changed only through approved pending changes.",
@@ -11,7 +11,8 @@
   },
   "exports": {
     ".": "./nuxt.config.ts",
-    "./contracts": "./shared/contracts.ts"
+    "./contracts": "./shared/contracts.ts",
+    "./tailwind.css": "./tailwind.css"
   },
   "files": [
     "server",
@@ -19,7 +20,9 @@
     "nuxt.config.ts",
     "README.md",
     "LICENSE",
-    "app"
+    "app",
+    "modules",
+    "tailwind.css"
   ],
   "scripts": {
     "dev:prepare": "nuxt prepare",
@@ -27,7 +30,8 @@
     "test": "vitest run",
     "check": "pnpm typecheck && pnpm test",
     "build:playground": "nuxt build playground",
-    "dev": "nuxt dev playground"
+    "dev": "nuxt dev playground",
+    "test:e2e": "pnpm build:playground && playwright test"
   },
   "dependencies": {
     "zod": "^4.6.5"
@@ -36,11 +40,16 @@
     "nuxt": "^4.5.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@nuxt4-layers/theme-manager": "git+https://github.com/nuxt4-layers/theme-manager.git#934d1bd33e0731aafea0d454857dc8fbb756ccb2",
+    "@playwright/test": "^1.64.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.13.6",
     "@types/pg": "^8.23.1",
     "h3": "^1.15.11",
     "nuxt": "^4.5.2",
     "pg": "^8.23.1",
+    "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "vitest": "^5.0.3",
     "vue-tsc": "^3.3.11"

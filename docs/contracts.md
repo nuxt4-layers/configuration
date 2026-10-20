@@ -126,7 +126,7 @@ A request's tenant is the one whose `site.host-names` (a `high`, tenant-only, `s
 | `members` | A signed-in subject with a membership in effect in the tenant (for platform values, any signed-in subject) | A subject with a membership in effect in the group itself; membership of an ancestor is not enough |
 | `server` | Server functions only; never over HTTP | Likewise |
 
-A subject holding `configuration.settings:view` on the scope's governing group (§7.1) reads every value but `server` ones, to administer them. Group values are never served anonymously, and a group cannot opt in to it.
+A subject holding `configuration.settings:view` on the scope's governing group (§7.1) reads every value set there, `server` ones included, to administer them. Group values are never served anonymously, and a group cannot opt in to it.
 
 There is no `secret` visibility. A secret is never a setting, whatever its visibility: the host keeps it in its secret store and passes it to the layer that uses it.
 
@@ -328,12 +328,11 @@ Import, export, disposal, maintenance and the relay are never endpoints.
 
 ## 15. Presentation
 
-`./presentation` imports only the contract and reaches the server only through `useConfiguration()`. It decides nothing. Text comes from `presentation/messages.ts` via `useConfigurationText()`; styling only through the SemanticPresentationTheme vocabulary. A person's name is shown only through the host's person-name component (Profile's `ProfilePersonName`).
+Components, composables and pages live in `app/` and reach the server only through `useConfiguration()` and `useConfigurationAdministration()`. They decide nothing. Text comes from `app/configuration-messages.ts` through `useConfigurationText()`; hosts override wording in `app.config.ts` under `configuration.messages`. Styling uses only Theme Manager's SemanticPresentationTheme vocabulary (`configurationClasses`), as Profile's, Identity's and Authorisation's pages do; hosts add `@nuxt4-layers/configuration-service/tailwind.css` to their stylesheet.
 
-- `useConfiguration({ groupId? })`: values in force for the current tenant, or a group the subject may read; shared across the page, fetched once with `useRequestFetch()` during SSR.
-- `useConfigurationHead()`: sets the title template, description, Open Graph image and `lang` from `seo.*` and `site.*`.
-- Components: `ConfigurationSiteName`, `ConfigurationLogo`, `ConfigurationOrganisationDetails` (legal name, registration, address: what UK company websites must show), `ConfigurationContact`, `ConfigurationSocialLinks`, `ConfigurationLegalLinks`.
-- Administration pages per scope, generated from the declarations: each field shows its value, provenance and risk; saving requests a change and says whether it applied or awaits approval, by whom and until when; a field with an open change shows it. A pending-changes page lists what the subject may decide, showing the current and proposed values side by side.
+- Public: `useConfiguration()`, `useConfigurationHead()`, and `ConfigurationSiteName`, `ConfigurationOrganisationDetails`, `ConfigurationContact`, `ConfigurationSocialLinks`, `ConfigurationLegalLinks` (plain semantic markup).
+- Administration pages, registered by `modules/configuration-pages.ts` (`configuration: { pages: { enabled, paths: { settings, changes } }, signIn }` in the host's `nuxt.config.ts`; by default `/configuration` and `/configuration/changes`, scoped by `?scope=platform`, `?scope=tenant&governingGroupId=…` or `?scope=group&groupId=…`). Each setting shows its value in force, where it comes from and its risk; its form is built from the value's JSON Schema, so a host's own settings get one too. Saving requests a change and says whether it applied or awaits approval, by whom and until when. The changes page shows what each open change would do beside what is there now; others may approve or reject, the requester may withdraw. The pages are never framed, cached or sent as a Referer.
+- Deliberate pairings, which a host's theme must keep legible (`app/configuration-pairings.ts`): `pen-muted-default` on `fill-base-default` (hints and notes on the card), `edge-error-default` on `fill-input-default` (an invalid field's border), `edge-base-active` on `fill-base-default` (the focus indicator).
 
 ## 16. Versioning
 
