@@ -102,7 +102,7 @@ export type { ConfigurationEvent, ConfigurationEventType } from './events'
 export { configurationEventSchema } from './events'
 
 export type { ConfigurationPermission } from './permissions'
-export { CONFIGURATION_PERMISSIONS, MANAGE_PERMISSION, SCOPE_RISK_FLOOR, VIEW_PERMISSION } from './permissions'
+export { CONFIGURATION_PERMISSIONS, MANAGE_PERMISSION, readPermission, SCOPE_RISK_FLOOR, VIEW_PERMISSION } from './permissions'
 
 export type {
   ConfigurationAccessDecision,

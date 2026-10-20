@@ -62,6 +62,7 @@ describe('Configuration public contract', () => {
     expect(() => contracts.buildConfigurationCatalogue(own, [{ ...base, key: 'shop.currency', scopes: [] }])).toThrow(/scope/)
     expect(() => contracts.buildConfigurationCatalogue(own, [{ ...base, key: 'shop.currency', default: 3 as unknown as string }])).toThrow(/default/)
     expect(() => contracts.buildConfigurationCatalogue(own, [{ ...base, key: 'Shop' }])).toThrow(/namespace/)
+    expect(() => contracts.buildConfigurationCatalogue(own, [{ ...base, key: 'shop.currency', scopes: ['account'], visibility: 'public' }])).toThrow(/account/)
     expect(contracts.buildConfigurationCatalogue(own, [{ ...base, key: 'shop.currency' }]).has('shop.currency')).toBe(true)
   })
 

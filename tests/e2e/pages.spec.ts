@@ -179,6 +179,29 @@ test('sends a high-risk change for approval, which another manager gives', async
   await expect(setting(page, 'Legal name')).toContainText('Acme Widgets Ltd')
 })
 
+test('lets a person change their own account at once, and nobody else reach it', async ({ page, context, request }) => {
+  const scenario = await seed(request)
+  await signInAs(context, scenario.alice)
+  await page.goto('/configuration')
+  await page.getByLabel('Your account').check()
+  await page.getByRole('button', { name: 'Show settings' }).click()
+  const digest = setting(page, 'notices.digest')
+  await expect(digest).toContainText('Default')
+  await expect(digest).toContainText('Low risk')
+  await expectAccessible(page)
+  await digest.getByRole('button', { name: 'Change' }).click()
+  await digest.getByLabel('notices.digest').selectOption('daily')
+  await digest.getByRole('button', { name: 'Save' }).click()
+  await expect(digest.getByRole('status')).toHaveText('Saved.')
+  await expect(digest).toContainText('Set here')
+  await expectAccessible(page)
+
+  // Carol has no account of her own here, and Alice's is never hers to see.
+  await signInAs(context, scenario.carol)
+  await page.goto('/configuration?scope=account')
+  await expect(page.getByRole('alert')).toContainText('You cannot administer these settings, or they do not exist.')
+})
+
 test('reflows to a narrow screen without horizontal scrolling', async ({ page, context, request }) => {
   const scenario = await seed(request)
   await signInAs(context, scenario.alice)

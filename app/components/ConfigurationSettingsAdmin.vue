@@ -28,7 +28,8 @@ const unauthenticated = computed(() => configurationErrorOf(error.value)?.code =
           {{ text('configuration.admin.view-changes') }} ({{ view.openChanges.length }})
         </NuxtLink>
       </p>
-      <ul :class="configurationClasses.list">
+      <p v-if="view.declarations.length === 0">{{ text('configuration.admin.no-settings') }}</p>
+      <ul v-else :class="configurationClasses.list">
         <ConfigurationSettingEditor v-for="declaration in view.declarations" :key="declaration.key" :declaration="declaration" :view="view" :scope="scope" @changed="refresh()" />
       </ul>
     </template>

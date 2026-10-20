@@ -69,13 +69,13 @@ export function getConfigurationTenantForHost(host: string) {
   return service().tenantForHost(host)
 }
 
-/** The values a viewer may read (anonymous: public platform and tenant values only). */
-export function readConfigurationForViewer(input: { subject: ConfigurationSubject | null, tenantId: string | null, groupId?: string }) {
+/** The values a viewer may read (anonymous: public platform and tenant values only; `account`: the viewer's own). */
+export function readConfigurationForViewer(input: { subject: ConfigurationSubject | null, tenantId: string | null, groupId?: string, account?: boolean }) {
   return service().readForViewer(input)
 }
 
 /** The values in force with provenance; server code passes `visibility: 'server'`. */
-export function getConfiguration(input: { tenantId?: string, groupId?: string, keys?: readonly string[], visibility: ConfigurationVisibility }) {
+export function getConfiguration(input: { tenantId?: string, groupId?: string, accountId?: string, keys?: readonly string[], visibility: ConfigurationVisibility }) {
   return service().getConfiguration(input)
 }
 
@@ -101,7 +101,7 @@ export function relayConfigurationOutbox(input: { publish: (event: Configuration
 /**
  * Server-only: the host's handler for Identity's relayed events. Keeps the
  * tenant states and disposes of a group's or tenant's values when Identity
- * says the disposal is due. Idempotent by event id; returns whether it was new.
+ * says the disposal is due, and of a closed identity's account. Idempotent by event id; returns whether it was new.
  */
 export function applyConfigurationIdentityEvent(event: unknown) {
   return service().applyIdentityEvent(event)
@@ -120,6 +120,16 @@ export function disposeConfigurationGroup(input: { groupId: string, correlationI
 /** Server-only: on Identity's `tenant.disposal-due`. */
 export function disposeConfigurationTenant(input: { tenantId: string, correlationId: string }) {
   return service().disposeTenant(input)
+}
+
+/** Server-only: on Identity's `identity.closed` (`applyConfigurationIdentityEvent` does it). */
+export function disposeConfigurationAccount(input: { identityId: string, correlationId: string }) {
+  return service().disposeAccount(input)
+}
+
+/** Server-only: a person's part of a data-subject export (their account's values and history). */
+export function exportConfigurationAccountData(input: { identityId: string }) {
+  return service().exportAccountData(input)
 }
 
 /** Server-only: the tenant's part of a tenant export. */

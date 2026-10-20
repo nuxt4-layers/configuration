@@ -59,7 +59,7 @@ export const configurationEventSchema = z.discriminatedUnion('type', [
   z.strictObject({
     ...envelope,
     type: z.literal('configuration.reset'),
-    data: z.strictObject({ ...scope, reasonCode: z.enum(['tenant-disposed', 'group-disposed']) }),
+    data: z.strictObject({ ...scope, reasonCode: z.enum(['tenant-disposed', 'group-disposed', 'account-closed']) }),
   }),
   z.strictObject({
     ...envelope,

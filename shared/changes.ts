@@ -27,6 +27,8 @@ export const changeTargetSchema = z.discriminatedUnion('scope', [
   z.strictObject({ scope: z.literal('platform') }),
   z.strictObject({ scope: z.literal('tenant'), tenantId: identifierSchema, governingGroupId: identifierSchema }),
   z.strictObject({ scope: z.literal('group'), groupId: identifierSchema }),
+  // Always the requester's own account: nobody names another's.
+  z.strictObject({ scope: z.literal('account') }),
 ])
 export type ConfigurationChangeTarget = z.infer<typeof changeTargetSchema>
 

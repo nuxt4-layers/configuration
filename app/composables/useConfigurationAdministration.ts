@@ -6,6 +6,7 @@ export type ConfigurationAdminScope =
   | { scope: 'platform' }
   | { scope: 'tenant', governingGroupId: string, tenantId?: string }
   | { scope: 'group', groupId: string }
+  | { scope: 'account' }
 
 export interface ConfigurationDeclarationView {
   key: string

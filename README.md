@@ -1,15 +1,15 @@
 # @nuxt4-layers/configuration-service
 
-Nuxt 4 foundation layer for the facts a site states about itself and its organisation: its name, the organisation's legal details and address, contact points, social links, legal pages and presentation defaults, for the platform, each tenant and each group.
+Nuxt 4 foundation layer for the facts a site states about itself and its organisation: its name, the organisation's legal details and address, contact points, social links, legal pages and presentation defaults, for the platform, each tenant and each group; and the settings a host declares per account, which only the account's own person reads or changes.
 
 A platform foundation layer, not a member of the Identity and Access Management (IAM) suite. It reaches [`identity`](https://github.com/nuxt4-layers/identity) and [`authorisation`](https://github.com/nuxt4-layers/authorisation) only through ports the host supplies, never imports them, and follows the suite's [approvals process](https://github.com/nuxt4-layers/iam-integration/blob/899befcf566775950c4b70b8cf0e7658be1000f9/docs/processes/approvals.md) for its own changes.
 
-**Status:** 0.3, phase 2 of the [roadmap](docs/roadmap.md) done: the core, the HTTP API (tenant by host name), `useConfiguration()`, the public components and the administration pages (settings and changes awaiting a decision) are built and tested; composition with the IAM members' adapters is next. No contract version is released yet; see the [contract outline](docs/contracts.md).
+**Status:** 0.3, phase 2 of the [roadmap](docs/roadmap.md) done: the core, the HTTP API (tenant by host name), `useConfiguration()`, the public components and the administration pages (settings and changes awaiting a decision) are built and tested; phase 3 (composition with the IAM members, accounts) is in progress. No contract version is released yet; see the [contract outline](docs/contracts.md).
 
 ## Owns
 
 - Declared settings: each one a key, a schema, the scopes that may set it, who may read it, its risk and its default. Nothing undeclared is stored.
-- The values of those settings for the platform, for each tenant and for each standard group, keyed by Identity's opaque identifiers.
+- The values of those settings for the platform, for each tenant, for each standard group and for each person's own account, keyed by Identity's opaque identifiers.
 - Resolving a setting's value in force, from its default, the deployment, the platform, the tenant and the group's lineage, with where each value came from.
 - Pending changes to those values, their approvals and their history.
 

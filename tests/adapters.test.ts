@@ -12,6 +12,8 @@ const tenant = '01928c4e-0000-7000-8000-000000000001'
 const root = '01928c4e-0000-7000-8000-000000000002'
 const team = '01928c4e-0000-7000-8000-000000000003'
 const person = '01928c4e-0000-7000-8000-000000000004'
+const personal = '01928c4e-0000-7000-8000-000000000005'
+const closed = '01928c4e-0000-7000-8000-000000000006'
 
 const directory: IdentityDirectoryLike = {
   async describeGroup(groupId) {
@@ -21,7 +23,9 @@ const directory: IdentityDirectoryLike = {
     if (identityId === 'down') throw new Error('identity is down')
     return {
       identityId,
-      kind: identityId === person ? 'person' : 'break-glass',
+      kind: identityId === person || identityId === closed ? 'person' : 'break-glass',
+      identityState: identityId === closed ? 'closed' : 'active',
+      personalGroup: identityId === person || identityId === closed ? { groupId: personal } : null,
       memberships: [
         { group: { groupId: team, tenantId: tenant }, effectiveStatus: 'active' },
         { group: { groupId: root, tenantId: tenant }, effectiveStatus: 'paused' },
@@ -39,8 +43,13 @@ describe('Identity\'s directory as ConfigurationDirectory', () => {
   })
 
   it('counts only active memberships, and never treats a break-glass identity as a person', async () => {
-    expect(await adapted.describeActor(person, { consistency: 'bounded' })).toEqual({ identityId: person, kind: 'person', memberships: [{ groupId: team, tenantId: tenant }] })
+    expect(await adapted.describeActor(person, { consistency: 'bounded' })).toEqual({ identityId: person, kind: 'person', personalGroupId: personal, memberships: [{ groupId: team, tenantId: tenant }] })
     expect((await adapted.describeActor(root, { consistency: 'bounded' }))!.kind).toBe('service')
+  })
+
+  it('names a personal group only while the identity is active', async () => {
+    expect((await adapted.describeActor(closed, { consistency: 'strong' }))!.personalGroupId).toBeNull()
+    expect((await adapted.describeActor(root, { consistency: 'strong' }))!.personalGroupId).toBeNull()
   })
 
   it('passes a failure on, so the layer fails closed', async () => {

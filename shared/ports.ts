@@ -39,6 +39,8 @@ export interface ConfigurationGroupFacts {
 export interface ConfigurationActorFacts {
   identityId: string
   kind: 'person' | 'service'
+  /** The person's personal group while the identity is active; `null` otherwise, and for service identities. */
+  personalGroupId: string | null
   /** Memberships in effect now. */
   memberships: readonly { groupId: string, tenantId: string }[]
 }

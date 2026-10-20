@@ -245,6 +245,20 @@ describe.skipIf(!hasDatabase)('the /api/configuration endpoints', () => {
     expect(claim.data).toMatchObject({ code: 'conflict', reason: 'host-taken' })
   })
 
+  it('serves a person their own account only, on any host, and never takes another\'s identity', async () => {
+    world.account(alice, tenantA)
+    expect((await call('GET', 'http://acme.test/api/configuration?scope=account')).status).toBe(401)
+    const own = await call('GET', 'http://bravo.test/api/configuration?scope=account', { as: alice })
+    expect(own.status).toBe(200)
+    expect(own.data.values['site.name']).toBe('Acme')
+    const admin = await call('GET', 'http://acme.test/api/configuration/admin?scope=account', { as: alice })
+    expect(admin.status).toBe(200)
+    expect(admin.data).toMatchObject({ target: { scope: 'account' }, tenantId: null, declarations: [], values: {} })
+    expect((await call('GET', 'http://acme.test/api/configuration/admin?scope=account', { as: carol })).status).toBe(403)
+    const named = await call('POST', 'http://acme.test/api/configuration/changes', { as: alice, body: { target: { scope: 'account', identityId: bob }, set: { 'site.tagline': 'x' }, expected: { 'site.tagline': null }, justification: { reasonCode: 'update' } } })
+    expect(named.status).toBe(400)
+  })
+
   it('stays coarse: unknown changes are forbidden, bad bodies name only a problem code', async () => {
     world.grant(alice, GROUP, teamA)
     expect((await call('GET', `http://acme.test/api/configuration/changes/${id()}`, { as: alice })).status).toBe(403)

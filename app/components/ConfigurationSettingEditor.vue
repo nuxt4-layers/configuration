@@ -40,7 +40,7 @@ function edit() {
 }
 
 function target(): Record<string, string> {
-  if (props.scope.scope === 'platform') return { scope: 'platform' }
+  if (props.scope.scope === 'platform' || props.scope.scope === 'account') return { scope: props.scope.scope }
   if (props.scope.scope === 'group') return { scope: 'group', groupId: props.scope.groupId }
   return { scope: 'tenant', tenantId: props.view.tenantId ?? '', governingGroupId: props.scope.governingGroupId }
 }
@@ -75,7 +75,7 @@ const clear = () => send(null)
     <div :class="configurationClasses.stack" class="w-full">
       <div :class="configurationClasses.row">
         <h2 :id="`${domId}-label`" :class="configurationClasses.legend">{{ label }}</h2>
-        <span :class="configurationClasses.badge">{{ text(`configuration.admin.risk.${declaration.risk}`) }}</span>
+        <span :class="configurationClasses.badge">{{ text(scope.scope === 'account' ? `configuration.admin.account-risk.${declaration.risk}` : `configuration.admin.risk.${declaration.risk}`) }}</span>
         <span v-if="pending" :class="configurationClasses.badge">{{ text('configuration.admin.pending') }}</span>
       </div>
       <p :class="configurationClasses.text">{{ summariseConfigurationValue(inForce) || text('configuration.admin.not-set') }}</p>

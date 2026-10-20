@@ -12,8 +12,12 @@ export type ConfigurationPermission = typeof CONFIGURATION_PERMISSIONS[number]['
 
 export const VIEW_PERMISSION = 'configuration.settings:view' satisfies ConfigurationPermission
 
-/** The permission requested and approved on a scope's governing group. */
-export const MANAGE_PERMISSION: Readonly<Record<ConfigurationScopeKind, ConfigurationPermission>> = {
+/**
+ * The permission requested and approved on a scope's governing group. An
+ * account has none: only its own person reads or changes it, in their
+ * personal group, with no approver (personal-group sovereignty).
+ */
+export const MANAGE_PERMISSION: Readonly<Record<Exclude<ConfigurationScopeKind, 'account'>, ConfigurationPermission>> = {
   platform: 'configuration.platform-settings:manage',
   tenant: 'configuration.tenant-settings:manage',
   group: 'configuration.group-settings:manage',
@@ -24,4 +28,15 @@ export const SCOPE_RISK_FLOOR: Readonly<Record<ConfigurationScopeKind, Configura
   platform: 'high',
   tenant: 'low',
   group: 'low',
+  account: 'low',
+}
+
+/**
+ * The permission that lets a person read a scope as its administrator. The
+ * platform's settings are the hosting application's own, so only those who
+ * may change them (the platform group's owners, unless explicitly granted)
+ * may read them there.
+ */
+export function readPermission(scope: Exclude<ConfigurationScopeKind, 'account'>): ConfigurationPermission {
+  return scope === 'platform' ? MANAGE_PERMISSION.platform : VIEW_PERMISSION
 }

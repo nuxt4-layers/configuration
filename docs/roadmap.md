@@ -20,4 +20,5 @@ The layer is specified before it is built. Each phase keeps the [contract outlin
 ## Phase 3: composition (in progress)
 
 - Done: reference adapters from Identity's directory and access governance, Authorisation's qualification and Authentication's principal; Identity's events applied once each (tenant states, and group and tenant disposal when due, never while deferred).
-- Next: compose the layer with the real members in `steve-r-lewis/platform-test-harness`, so the host's type check proves the adapters fit and the pages run against the suite.
+- Done: composed with the real members in `steve-r-lewis/platform-test-harness`; the platform's own host name administers what Authorisation allows.
+- Done: a person's own `account` scope (personal-group sovereignty, disposed of on closure); administrators see only their scope's own settings; the platform's settings are read only by those who may change them.
