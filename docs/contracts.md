@@ -116,7 +116,7 @@ The lineage comes from Identity's directory port at every read (`bounded`) and e
 
 ### 4.1 Tenant by host name
 
-A request's tenant is the one whose `site.host-names` (a `high`, tenant-only, `server` setting) holds the request's host name, lower case and without port; no tenant matches → platform values only. A host name belongs to one tenant at most: a change claiming one another tenant holds is refused (`conflict`, `host-taken`), at request and again on applying. `X-Forwarded-Host` is read only when the host sets `NUXT_CONFIGURATION_TRUST_FORWARDED_HOST` behind its own proxy. Over HTTP, a request reaches only its own tenant's scopes and changes, and the platform's.
+A request's tenant is the one whose `site.host-names` (a `high`, tenant-only, `server` setting) holds the request's host name, lower case and without port; no tenant matches → platform values only. A host name belongs to one tenant at most: a change claiming one another tenant holds is refused (`conflict`, `host-taken`), at request and again on applying. `X-Forwarded-Host` is read only when the host sets `NUXT_CONFIGURATION_TRUST_FORWARDED_HOST` behind its own proxy. Over HTTP, a request on a tenant's host name reaches only that tenant's scopes and changes, and the platform's. On a host name no tenant claims (the platform's own, e.g. an operators' console), a subject reaches any scope Authorisation lets them, naming a tenant with `?tenantId=`: this is where a tenant gets its first host name.
 
 ## 5. Visibility
 

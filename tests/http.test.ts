@@ -208,6 +208,26 @@ describe.skipIf(!hasDatabase)('the /api/configuration endpoints', () => {
     const admin = await call('GET', `http://bravo.test/api/configuration/admin?scope=tenant&governingGroupId=${rootB}`, { as: dave })
     expect(admin.status).toBe(200)
     expect(admin.data.values['site.host-names']).toEqual(['bravo.test'])
+    // Another tenant's host cannot name this tenant in the query either.
+    expect((await call('GET', `http://acme.test/api/configuration/admin?scope=tenant&tenantId=${tenantB}&governingGroupId=${rootB}`, { as: dave })).status).toBe(403)
+  })
+
+  it('administers any scope Authorisation allows on the platform\'s own host name, where a tenant gets its first one', async () => {
+    world.grant(dave, TENANT, rootB)
+    world.grant(carol, TENANT, rootB)
+    world.grant(dave, 'configuration.settings:view', rootB)
+    await pool.query(`delete from "configuration"."value" where "key" = 'site.host-names' and "scope_id" = $1`, [tenantB])
+    const admin = await call('GET', `http://platform.test/api/configuration/admin?scope=tenant&tenantId=${tenantB}&governingGroupId=${rootB}`, { as: dave })
+    expect(admin.status).toBe(200)
+    const claim = await call('POST', 'http://platform.test/api/configuration/changes', {
+      as: dave,
+      body: { target: { scope: 'tenant', tenantId: tenantB, governingGroupId: rootB }, set: { 'site.host-names': ['bravo.example'] }, expected: { 'site.host-names': null }, justification: { reasonCode: 'new-domain' } },
+    })
+    expect(claim.data).toMatchObject({ status: 'awaiting', route: 'approvers' })
+    expect((await call('POST', `http://platform.test/api/configuration/changes/${claim.data.changeId}/decision`, { as: carol, body: { changeDigest: claim.data.digest, decision: 'approve' } })).data.status).toBe('applied')
+    expect((await call('GET', 'http://bravo.example/api/configuration/public')).data.values['site.name']).toBe('Bravo')
+    // Without the permission, the platform's host reaches nothing.
+    expect((await call('GET', `http://platform.test/api/configuration/admin?scope=tenant&tenantId=${tenantB}&governingGroupId=${rootB}`, { as: alice })).status).toBe(403)
   })
 
   it('refuses a host name another tenant answers on', async () => {

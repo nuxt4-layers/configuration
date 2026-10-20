@@ -387,12 +387,11 @@ export function createConfigurationService(deps: ServiceDependencies) {
     const memberOfTenant = tenantId === undefined || memberships.some(membership => membership.tenantId === tenantId)
     if (input.groupId === undefined) return getConfiguration({ tenantId, visibility: memberOfTenant ? 'members' : 'public' })
     const groupId = parse(() => identifierSchema.parse(input.groupId))
-    if (tenantId === undefined) throw new ConfigurationFailure('forbidden')
     const group = await port(() => deps.directory().describeGroup(groupId, { consistency: 'bounded' }))
-    if (!group || group.kind !== 'standard' || group.state === 'deleted' || group.tenantId !== tenantId) throw new ConfigurationFailure('forbidden')
+    if (!group || group.kind !== 'standard' || group.state === 'deleted' || (tenantId !== undefined && group.tenantId !== tenantId)) throw new ConfigurationFailure('forbidden')
     const visibility: ConfigurationVisibility | null = memberships.some(membership => membership.groupId === groupId) || await port(() => deps.access().allows({ identityId: subject.identityId, permission: VIEW_PERMISSION, groupId, consistency: 'bounded' }))
       ? 'members'
-      : memberships.some(membership => membership.tenantId === tenantId) ? 'public' : null
+      : memberships.some(membership => membership.tenantId === group.tenantId) ? 'public' : null
     if (!visibility) throw new ConfigurationFailure('forbidden')
     const answer = await getConfiguration({ groupId, visibility })
     if (!answer) throw new ConfigurationFailure('forbidden')
@@ -400,11 +399,13 @@ export function createConfigurationService(deps: ServiceDependencies) {
   }
 
   /**
-   * Over HTTP, a request reaches only its own tenant's scopes and changes
-   * (and the platform's). `undefined` is server code, which is not confined.
+   * Over HTTP, a request on a tenant's host name reaches only that tenant's
+   * scopes and changes (and the platform's). On a host name no tenant claims
+   * (`null`: the platform's own) and from server code (`undefined`), only
+   * Authorisation's decisions limit what a subject reaches.
    */
   function confine(scopeTenantId: string | null, requestTenantId: string | null | undefined): void {
-    if (requestTenantId === undefined || scopeTenantId === null) return
+    if (requestTenantId == null || scopeTenantId === null) return
     if (scopeTenantId !== requestTenantId) throw new ConfigurationFailure('forbidden')
   }
 

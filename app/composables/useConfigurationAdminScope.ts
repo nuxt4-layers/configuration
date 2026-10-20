@@ -10,7 +10,10 @@ export function useConfigurationAdminScope() {
     const scope = value('scope')
     if (scope === 'platform') return { scope: 'platform' }
     if (scope === 'group' && IDENTIFIER.test(value('groupId'))) return { scope: 'group', groupId: value('groupId') }
-    if (scope === 'tenant' && IDENTIFIER.test(value('governingGroupId'))) return { scope: 'tenant', governingGroupId: value('governingGroupId') }
+    if (scope === 'tenant' && IDENTIFIER.test(value('governingGroupId'))) {
+      // On the platform's own host name the tenant is named; a tenant's host names its own.
+      return { scope: 'tenant', governingGroupId: value('governingGroupId'), ...(IDENTIFIER.test(value('tenantId')) ? { tenantId: value('tenantId') } : {}) }
+    }
     return null
   })
 }
