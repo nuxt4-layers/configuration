@@ -28,7 +28,7 @@ describe.skipIf(!hasDatabase)('Migrations (PostgreSQL)', () => {
   })
 
   it('applies each migration once', async () => {
-    expect(await runConfigurationMigrations(admin, 'configuration', role)).toEqual(['0001_values_changes_history_outbox', '0002_host_names'])
+    expect(await runConfigurationMigrations(admin, 'configuration', role)).toEqual(['0001_values_changes_history_outbox', '0002_host_names', '0003_identity_events'])
     expect(await runConfigurationMigrations(admin, 'configuration', role)).toEqual([])
   })
 

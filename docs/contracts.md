@@ -257,14 +257,14 @@ A change's risk is never below its permission's (§6, step 6). `high` and `criti
 | `ConfigurationDatabase` | Yes | Host | PostgreSQL pool (runtime role), schema, and optionally the migration pool, under ADR-0002 and ADR-0006 |
 | `ConfigurationCatalogue` | Yes | Host | The host's and other layers' declarations (§3.1), added to the layer's own |
 | `ConfigurationDirectory` | For `group` scope and `members` visibility | Identity's directory port, through the host | A group's tenant, lineage, kind and state; the memberships in effect of an actor, and its `kind` |
-| `ConfigurationTenants` | For `tenant` scope | Identity, through the host | Whether a tenant exists, and its state |
+| `ConfigurationTenants` | No: without it, the states Identity's tenant events announced (§14) | Identity, through the host | Whether a tenant exists, and its state |
 | `ConfigurationGovernance` | For changes | Identity's access-governance port (`getIdentityAccessGovernance`), through the host | The governing group's parent, root, approval requirement and reference rule, safety periods in force, the requester's recovery hold and controlled identities; owners for the fallbacks |
 | `ConfigurationAccessDecision` | For changes and reading | Authorisation (`authorise`, `countAuthorisationQualifying`), through the host | Whether an identity holds a permission (§10) on a group now; how many others do, for the route; a permission's risk |
 | `ConfigurationSubjectResolver` | For the endpoints | Authentication, through the host | The signed-in subject for a request, with its `kind` and assurance (level, phishing resistance, `authenticatedAt`), or `null` |
 | `ConfigurationPlatformGroup` | For `platform` scope changes | Host | The platform group's identifier |
 | `ConfigurationClock` | No: the system clock without it | Host (the suite's one clock) | The current time for expiries, delays, holds and retention |
 
-Required ports fail closed: a failure is `unavailable` and records nothing. There is no in-memory or file store: without the database, only deployment values and defaults are served, read-only, and every change answers `unavailable`. Reference adapters from Identity's and Authorisation's server functions belong in the host or the general integrations hub, never in iam-integration (Configuration is not a member).
+Required ports fail closed: a failure is `unavailable` and records nothing. There is no in-memory or file store: without the database, only deployment values and defaults are served, read-only, and every change answers `unavailable`. The layer ships reference adapters (`server/utils/configuration-adapters.ts`, auto-imported): `configurationDirectoryFromIdentity(getIdentityDirectory())`, `configurationGovernanceFromIdentity(getIdentityAccessGovernance())`, `configurationAccessDecisionFromAuthorisation({ qualifies: authorisationQualifies, countQualifying: countAuthorisationQualifying })` and `configurationSubjectResolverFromAuthentication({ getAuthenticatedPrincipal })`. They import no member: the host passes the functions in, and structural types name what each needs. They translate vocabulary only and pass every failure on.
 
 ## 12. Server functions
 
@@ -277,6 +277,8 @@ Required ports fail closed: a failure is `unavailable` and records nothing. Ther
 | `exportConfiguration({ scope, scopeId? })` | A versioned document of a scope's values, for moving them between environments. Server-only |
 | `requestConfigurationImport({ subject, document, scope, scopeId?, justification, correlationId })` | Turns such a document into one pending change, with the approvals its highest key needs: importing never bypasses approvals. Server-only |
 | `exportConfigurationTenantData({ tenantId })`, `disposeConfigurationTenant({ tenantId, correlationId })` | The tenant's part of tenant export and disposal (§14). Server-only |
+| `applyConfigurationIdentityEvent(event)` | The host's handler for Identity's relayed events (§14). Idempotent by event id. Server-only |
+| `syncConfigurationTenants(tenants)` | Records tenants that existed before the layer was installed, which no `tenant.created` will announce. Server-only |
 | `disposeConfigurationGroup({ groupId, correlationId })` | A deleted group's part of its disposal (§14). Server-only |
 | `relayConfigurationOutbox({ publish, limit? })` | §9 |
 | `runConfigurationMaintenance()` | Expires, applies delayed and released changes (§7.6), and applies retention (§8) |
@@ -322,8 +324,11 @@ Import, export, disposal, maintenance and the relay are never endpoints.
 
 ## 14. End of life
 
-- **Group deletion** ([group deletion](https://github.com/nuxt4-layers/iam-integration/blob/899befcf566775950c4b70b8cf0e7658be1000f9/docs/processes/group-deletion.md)): a deleted group's values stop resolving at once, because Identity's directory answers it as deleted (§4). On `group.disposal-due` the host calls `disposeConfigurationGroup`, which cancels its open changes, deletes its values, changes and history, and emits `configuration.reset` (`group-disposed`).
-- **Tenant shutdown** ([tenant lifecycle](https://github.com/nuxt4-layers/iam-integration/blob/899befcf566775950c4b70b8cf0e7658be1000f9/docs/processes/tenant-lifecycle.md)): the host calls `exportConfigurationTenantData` for the tenant export and, on `tenant.disposal-due`, `disposeConfigurationTenant`, which does the same for the tenant and every group of it.
+The host relays Identity's events to `applyConfigurationIdentityEvent`, which applies each once: `tenant.created`, `tenant.closing`, `tenant.closing-cancelled` and `tenant.closed` keep the tenant states (a closed tenant stays closed); `group.deleted` and `tenant.closed` with `disposal: 'due'`, and `group.disposal-due` and `tenant.disposal-due`, dispose as below. A deferred disposal (a legal hold) disposes of nothing until Identity says it is due. Other events are ignored.
+
+
+- **Group deletion** ([group deletion](https://github.com/nuxt4-layers/iam-integration/blob/899befcf566775950c4b70b8cf0e7658be1000f9/docs/processes/group-deletion.md)): a deleted group's values stop resolving at once, because Identity's directory answers it as deleted (§4). When the disposal is due, `disposeConfigurationGroup` cancels its open changes, deletes its values, changes and history, and emits `configuration.reset` (`group-disposed`).
+- **Tenant shutdown** ([tenant lifecycle](https://github.com/nuxt4-layers/iam-integration/blob/899befcf566775950c4b70b8cf0e7658be1000f9/docs/processes/tenant-lifecycle.md)): the host calls `exportConfigurationTenantData` for the tenant export; when the disposal is due, `disposeConfigurationTenant` does the same for the tenant and every group of it.
 - **Data-subject requests**: Configuration holds a person only where a `possibly-personal` value names them or a change records them as requester or approver. Values are corrected by an ordinary change; requester and approver identifiers are opaque and are anonymised by Profile's unlinking, like every other member's.
 
 ## 15. Presentation

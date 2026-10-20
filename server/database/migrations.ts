@@ -101,6 +101,22 @@ create index "outbox_unpublished_idx" on {{schema}}."outbox" ("sequence") where 
 create index "value_host_names_idx" on {{schema}}."value" using gin ("value" jsonb_path_ops) where "key" = 'site.host-names';
 `,
   },
+  {
+    // Tenant states as Identity's events announce them, and the events
+    // already applied (consumers are idempotent by event id).
+    id: '0003_identity_events',
+    sql: `
+create table {{schema}}."tenant" (
+  "tenant_id" text primary key,
+  "state" text not null check ("state" in ('active', 'closing', 'closed')),
+  "updated_at" timestamptz not null
+);
+create table {{schema}}."processed_event" (
+  "event_id" text primary key,
+  "processed_at" timestamptz not null
+);
+`,
+  },
 ]
 
 const SCHEMA_PATTERN = /^[a-z_][a-z0-9_]{0,62}$/
@@ -143,6 +159,7 @@ export async function runConfigurationMigrations(pool: PostgresPoolLike, schema:
       await client.query(`grant usage on schema ${quoted} to ${role}`)
       await client.query(`grant select, insert, update, delete on ${quoted}."value", ${quoted}."change", ${quoted}."approval", ${quoted}."history", ${quoted}."outbox" to ${role}`)
       await client.query(`grant usage on sequence ${quoted}."history_sequence_seq", ${quoted}."outbox_sequence_seq" to ${role}`)
+      await client.query(`grant select, insert, update on ${quoted}."tenant", ${quoted}."processed_event" to ${role}`)
     }
     await client.query('commit')
     return applied

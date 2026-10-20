@@ -93,7 +93,11 @@ export function provideConfigurationDirectory(next: ConfigurationDirectory): voi
   changed()
 }
 
-/** Identity's tenants: whether one exists, and its state. */
+/**
+ * Optional: Identity's tenants, whether one exists and its state, read at
+ * every request. Without it, the layer keeps the states Identity's tenant
+ * events announce.
+ */
 export function provideConfigurationTenants(next: ConfigurationTenants): void {
   if (typeof next?.describeTenant !== 'function') throw new TypeError('provideConfigurationTenants expects a describeTenant(tenantId) function.')
   tenants = next
@@ -145,7 +149,8 @@ function required<T>(value: T | null, name: string): T {
 
 export const useConfigurationDatabase = () => required(database, 'ConfigurationDatabase')
 export const useConfigurationDirectory = () => required(directory, 'ConfigurationDirectory')
-export const useConfigurationTenants = () => required(tenants, 'ConfigurationTenants')
+/** Optional: without it, the tenant states Identity's events announced (`applyConfigurationIdentityEvent`). */
+export const useConfigurationTenants = () => tenants
 export const useConfigurationGovernance = () => required(governance, 'ConfigurationGovernance')
 export const useConfigurationAccessDecision = () => required(access, 'ConfigurationAccessDecision')
 export const useConfigurationPlatformGroup = () => required(platformGroupId, 'ConfigurationPlatformGroup')

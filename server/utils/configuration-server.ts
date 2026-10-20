@@ -47,7 +47,7 @@ function service(): ConfigurationService {
         catalogue: useConfigurationCatalogue,
         deployment: useConfigurationDeployment,
         directory: missing(useConfigurationDirectory),
-        tenants: missing(useConfigurationTenants),
+        tenants: useConfigurationTenants,
         governance: missing(useConfigurationGovernance),
         access: missing(useConfigurationAccessDecision),
         platformGroupId: missing(useConfigurationPlatformGroup),
@@ -96,6 +96,20 @@ export function runConfigurationMaintenance() {
 /** Server-only: publishes the outbox, at least once, in order. */
 export function relayConfigurationOutbox(input: { publish: (event: ConfigurationEvent) => Promise<void>, limit?: number }) {
   return service().relayOutbox(input)
+}
+
+/**
+ * Server-only: the host's handler for Identity's relayed events. Keeps the
+ * tenant states and disposes of a group's or tenant's values when Identity
+ * says the disposal is due. Idempotent by event id; returns whether it was new.
+ */
+export function applyConfigurationIdentityEvent(event: unknown) {
+  return service().applyIdentityEvent(event)
+}
+
+/** Server-only: records tenants that existed before the layer was installed. */
+export function syncConfigurationTenants(tenants: readonly { tenantId: string, state: 'active' | 'closing' | 'closed' }[]) {
+  return service().syncTenants(tenants)
 }
 
 /** Server-only: on Identity's `group.disposal-due`. */

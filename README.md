@@ -32,7 +32,7 @@ An organisation's address or contact point can still be personal data (a sole tr
 | Direction | Interface | Purpose |
 |---|---|---|
 | Consumes from Identity | Directory, access-governance and tenant ports | Groups' tenant, lineage, kind and state; a tenant's state; approval requirements, safety periods and owners for the approval route |
-| Consumes from Identity | Events `group.deleted`, `group.disposal-due`, `tenant.disposal-due` | Dispose of a group's or tenant's values |
+| Consumes from Identity | Its tenant and disposal events, through `applyConfigurationIdentityEvent` | Tenant states, and disposal of a group's or tenant's values when due |
 | Consumes from Authorisation | Access-decision port | Whether the subject may request or approve a change, and how many others qualify |
 | Consumes from the host | Subject resolver, database, clock, setting declarations | The signed-in subject and its assurance; storage under ADR-0002; the host's and other layers' own settings |
 | Provides to pages | `useConfiguration()`, `useConfigurationHead()`, `Configuration*` components | Values in force, head and SEO defaults, and administration pages with pending changes |

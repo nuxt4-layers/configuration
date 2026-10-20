@@ -41,6 +41,17 @@ import {
   VIEW_PERMISSION,
 } from '../../shared/contracts'
 import { quoteSchema } from '../database/migrations'
+
+/** Identity's events this layer consumes (Identity contract §11), checked strictly. */
+const IDENTITY_EVENT_TYPES = ['tenant.created', 'tenant.closing', 'tenant.closing-cancelled', 'tenant.closed', 'tenant.disposal-due', 'group.deleted', 'group.disposal-due'] as const
+const envelope = { eventId: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/), occurredAt: z.string(), correlationId: correlationIdSchema }
+const identityEventSchema = z.discriminatedUnion('type', [
+  z.object({ ...envelope, type: z.enum(['tenant.created', 'tenant.closing', 'tenant.closing-cancelled', 'tenant.disposal-due']), data: z.object({ tenantId: identifierSchema }) }),
+  z.object({ ...envelope, type: z.literal('tenant.closed'), data: z.object({ tenantId: identifierSchema, disposal: z.enum(['due', 'deferred']) }) }),
+  z.object({ ...envelope, type: z.literal('group.deleted'), data: z.object({ groupId: identifierSchema, tenantId: identifierSchema, disposal: z.enum(['due', 'deferred']) }) }),
+  z.object({ ...envelope, type: z.literal('group.disposal-due'), data: z.object({ groupId: identifierSchema, tenantId: identifierSchema }) }),
+])
+const tenantSyncSchema = z.array(z.strictObject({ tenantId: identifierSchema, state: z.enum(['active', 'closing', 'closed']) })).max(10_000)
 import { timeFrom, uuidv7 } from './clock'
 
 /**
@@ -60,7 +71,8 @@ export interface ServiceDependencies {
   /** The deployment's values, already parsed against the catalogue. */
   deployment: () => ConfigurationValues
   directory: () => ConfigurationDirectory
-  tenants: () => ConfigurationTenants
+  /** The host's tenants port; without one (`null`), the states Identity's events announced (§4). */
+  tenants: () => ConfigurationTenants | null
   governance: () => ConfigurationGovernance
   access: () => ConfigurationAccessDecision
   platformGroupId: () => string
@@ -239,7 +251,7 @@ export function createConfigurationService(deps: ServiceDependencies) {
       lineage = [...group.lineage].reverse()
     }
     if (tenant !== undefined) {
-      const facts = await port(() => deps.tenants().describeTenant(tenant!))
+      const facts = await port(() => tenantsPort().describeTenant(tenant!))
       if (!facts || facts.state === 'closed') return null
     }
     const scopes = [
@@ -273,12 +285,12 @@ export function createConfigurationService(deps: ServiceDependencies) {
     if (target.scope === 'group') {
       const group = await port(() => deps.directory().describeGroup(target.groupId, { consistency: 'strong' }))
       if (!group || group.kind !== 'standard' || group.state === 'deleted') throw new ConfigurationFailure('forbidden')
-      const tenant = await port(() => deps.tenants().describeTenant(group.tenantId))
+      const tenant = await port(() => tenantsPort().describeTenant(group.tenantId))
       if (!tenant || tenant.state === 'closed') throw new ConfigurationFailure('forbidden')
       const closed = tenant.state === 'closing' ? 'scope-closing' : group.state === 'active' ? null : 'scope-read-only'
       return { scope: 'group', scopeId: group.groupId, tenantId: group.tenantId, governingGroupId: group.groupId, closed }
     }
-    const tenant = await port(() => deps.tenants().describeTenant(target.tenantId))
+    const tenant = await port(() => tenantsPort().describeTenant(target.tenantId))
     if (!tenant || tenant.state === 'closed') throw new ConfigurationFailure('forbidden')
     return { scope: 'tenant', scopeId: target.tenantId, tenantId: target.tenantId, governingGroupId: target.governingGroupId, closed: tenant.state === 'closing' ? 'scope-closing' : null }
   }
@@ -818,8 +830,76 @@ export function createConfigurationService(deps: ServiceDependencies) {
     return { tenantId, values: values.rows, history: history.rows }
   }
 
+  // ------------------------------------------------------------- Identity
+
+  /** Tenant states as Identity's events announced them, when the host supplies no tenants port. */
+  const projectedTenants: ConfigurationTenants = {
+    async describeTenant(tenantId) {
+      const { rows } = await query(`select "state" from ${s}."tenant" where "tenant_id" = $1`, [tenantId])
+      const state = rows[0]?.state as 'active' | 'closing' | 'closed' | undefined
+      return state ? { tenantId, state } : null
+    },
+  }
+
+  function tenantsPort(): ConfigurationTenants {
+    return deps.tenants() ?? projectedTenants
+  }
+
+  async function setTenant(client: Client, tenantId: string, state: 'active' | 'closing' | 'closed', at: Date): Promise<void> {
+    await client.query(
+      `insert into ${s}."tenant" ("tenant_id", "state", "updated_at") values ($1, $2, $3)
+       on conflict ("tenant_id") do update set "state" = excluded."state", "updated_at" = excluded."updated_at"
+       where ${s}."tenant"."state" <> 'closed'`,
+      [tenantId, state, at],
+    )
+  }
+
+  /**
+   * Applies one of Identity's events (§14), idempotently by event id: tenant
+   * states for the projection, and disposal of a group's or tenant's values
+   * when Identity says it is due (never while a legal hold defers it).
+   * Returns whether the event was new. Other events are ignored.
+   */
+  async function applyIdentityEvent(event: unknown): Promise<boolean> {
+    const parsed = identityEventSchema.safeParse(event)
+    if (!parsed.success) {
+      if (event && typeof event === 'object' && typeof (event as { type?: unknown }).type === 'string' && !IDENTITY_EVENT_TYPES.includes((event as { type: string }).type as never)) return false
+      throw new ConfigurationFailure('validation-failed', 'malformed-event')
+    }
+    const { eventId, type, correlationId, data } = parsed.data
+    const at = now()
+    const fresh = await transaction(async (client) => {
+      const { rowCount } = await client.query(`insert into ${s}."processed_event" ("event_id", "processed_at") values ($1, $2) on conflict do nothing`, [eventId, at])
+      if (!rowCount) return false
+      if (type === 'tenant.created' || type === 'tenant.closing-cancelled') await setTenant(client, data.tenantId, 'active', at)
+      else if (type === 'tenant.closing') await setTenant(client, data.tenantId, 'closing', at)
+      else if (type === 'tenant.closed') await setTenant(client, data.tenantId, 'closed', at)
+      return true
+    })
+    if (!fresh) return false
+    const disposal = 'disposal' in data ? data.disposal : 'due'
+    if ((type === 'group.deleted' && disposal === 'due') || type === 'group.disposal-due') await disposeGroup({ groupId: (data as { groupId: string }).groupId, correlationId })
+    if ((type === 'tenant.closed' && disposal === 'due') || type === 'tenant.disposal-due') await disposeTenant({ tenantId: data.tenantId, correlationId })
+    return true
+  }
+
+  /**
+   * Records tenants that existed before this layer was installed, which no
+   * `tenant.created` event will announce. Server-only, for the operator.
+   */
+  async function syncTenants(tenants: readonly { tenantId: string, state: 'active' | 'closing' | 'closed' }[]): Promise<number> {
+    const parsed = parse(() => tenantSyncSchema.parse(tenants))
+    const at = now()
+    return transaction(async (client) => {
+      for (const tenant of parsed) await setTenant(client, tenant.tenantId, tenant.state, at)
+      return parsed.length
+    })
+  }
+
   return {
     getConfiguration,
+    applyIdentityEvent,
+    syncTenants,
     tenantForHost,
     readForViewer,
     changes: { request, decide, cancel, get, readScope },
