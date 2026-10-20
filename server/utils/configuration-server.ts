@@ -13,6 +13,7 @@ import {
   useConfigurationDirectory,
   useConfigurationGovernance,
   useConfigurationPlatformGroup,
+  useConfigurationRetention,
   useConfigurationTenants,
 } from './configuration-composition'
 
@@ -52,6 +53,7 @@ function service(): ConfigurationService {
         access: missing(useConfigurationAccessDecision),
         platformGroupId: missing(useConfigurationPlatformGroup),
         clock: useConfigurationClock,
+        retentionDays: useConfigurationRetention(),
       }),
     }
   }

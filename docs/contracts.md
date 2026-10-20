@@ -1,8 +1,8 @@
-# Configuration Contract (outline, draft)
+# Configuration Contract (version 1)
 
 `@nuxt4-layers/configuration-service/contracts` will be the only supported import path for this capability's types and pure helpers. It imports nothing but `zod`: no Nuxt, Vue, h3, server code, driver or other `@nuxt4-layers/*` package.
 
-Configuration answers one question: **what does this site, this tenant or this group say about itself, now?** It holds organisational facts only. This is an outline for review: section numbers are stable, and the open questions (§17) are decided before contract version 1.
+Configuration answers one question: **what does this site, this tenant or this group say about itself, now?** It holds organisational facts only. This is contract version 1 (§16): section numbers are stable, and the questions left open while it was drafted are decided in §17.
 
 ## 1. Boundaries
 
@@ -46,7 +46,7 @@ Nothing is stored unless a setting declares it. Each declaration is a strict obj
 
 Declarations are registered once at start-up (`provideConfigurationCatalogue`). Two declarations of one key, a value stored for an undeclared key, or a declaration whose `default` its schema refuses, fail closed (`unavailable`), so a catalogue mistake is found at start-up rather than in a page. A declaration's `risk` may be raised in a later release; lowering it is a breaking change for that key.
 
-### 3.2 The layer's own catalogue (version 1 proposal)
+### 3.2 The layer's own catalogue (version 1)
 
 | Key | Value | Scopes | Visibility | Sensitivity | Risk |
 |---|---|---|---|---|---|
@@ -230,7 +230,7 @@ A change awaiting an approver expires unapplied after `approvalExpiryDays` (7 by
 
 Every applied change keeps the previous and the new value of each key, the change's identifier, requester, approvers, time and correlation identifier, so an administrator sees what changed, who asked and who approved, and can restore an earlier value. A restore is an ordinary change, with the approvals its risk needs.
 
-History of `possibly-personal` keys is deleted after the retention period (default 400 days; bounds in §17, question 2) by `runConfigurationMaintenance`. Decided, expired and cancelled pending changes are kept for the same period. Both are disposed of with their scope (§14).
+History of `possibly-personal` keys is deleted after the retention period by `runConfigurationMaintenance`: 400 days unless the host chooses another with `provideConfigurationRetention({ days })`, from 30 to 2,190 (`CONFIGURATION_RETENTION`); a period outside the bounds is refused at start-up. It counts from when a change applied or was decided. Decided, expired and cancelled pending changes are kept for the same period. Both are disposed of with their scope (§14).
 
 ## 9. Events
 
@@ -272,6 +272,7 @@ A change's risk is never below its permission's (§6, step 6). `high` and `criti
 | `ConfigurationAccessDecision` | For changes and reading | Authorisation (`authorise`, `countAuthorisationQualifying`), through the host | Whether an identity holds a permission (§10) on a group now; how many others do, for the route; a permission's risk |
 | `ConfigurationSubjectResolver` | For the endpoints | Authentication, through the host | The signed-in subject for a request, with its `kind` and assurance (level, phishing resistance, `authenticatedAt`), or `null` |
 | `ConfigurationPlatformGroup` | For `platform` scope changes | Host | The platform group's identifier |
+| `ConfigurationRetention` (`provideConfigurationRetention`) | No: 400 days without it | Host | How long history of `possibly-personal` keys and decided changes are kept, within 30 to 2,190 days (§8) |
 | `ConfigurationClock` | No: the system clock without it | Host (the suite's one clock) | The current time for expiries, delays, holds and retention |
 
 Required ports fail closed: a failure is `unavailable` and records nothing. There is no in-memory or file store: without the database, only deployment values and defaults are served, read-only, and every change answers `unavailable`. The layer ships reference adapters (`server/utils/configuration-adapters.ts`, auto-imported): `configurationDirectoryFromIdentity(getIdentityDirectory())`, `configurationGovernanceFromIdentity(getIdentityAccessGovernance())`, `configurationAccessDecisionFromAuthorisation({ qualifies: authorisationQualifies, countQualifying: countAuthorisationQualifying })` and `configurationSubjectResolverFromAuthentication({ getAuthenticatedPrincipal })`. They import no member: the host passes the functions in, and structural types name what each needs. They translate vocabulary only and pass every failure on.
@@ -358,11 +359,13 @@ Components, composables and pages live in `app/` and reach the server only throu
 
 ## 16. Versioning
 
-Not yet versioned. Contract version 1 follows the IAM members' rules: frozen for 1.x; a removed or narrowed type, function, endpoint, event or port, or a stricter rule a host must act on, needs a new contract version; an added setting in the layer's catalogue is a minor release.
+Contract version 1 (`CONFIGURATION_CONTRACT_VERSION`), following the IAM members' rules: frozen for 1.x. A removed or narrowed type, function, endpoint, event or port, or a stricter rule a host must act on, needs a new contract version. An added setting in the layer's catalogue, an added export, or a raised risk is a minor release; a removed setting or a lowered risk is not allowed in 1.x. `tests/contracts.test.ts` pins version 1's exports and its catalogue's keys and risks.
 
-## 17. Open questions
+## 17. Decisions
 
-1. **History retention.** Default and bounds for history and decided changes (proposed default 400 days, bounds 30 to 2,190).
-2. **Localised values.** Whether text settings hold one value or one per locale (`{ 'en-GB': …, 'cy-GB': … }`).
-3. **Tenants with several root groups.** Whether `tenant` scope should instead be governed by one designated root group per tenant, which needs Identity to name it.
-4. **Membership.** Whether Configuration joins the IAM suite's processes formally (approvals scope, tenant lifecycle, group deletion) or stays a platform layer the host coordinates.
+The questions left open while version 1 was drafted, as decided:
+
+1. **History retention.** 400 days by default; a host chooses from 30 to 2,190 (§8). Kept short enough that `possibly-personal` history does not outlive its use, long enough for a year's audit.
+2. **Localised values.** One value per key. A site in several languages declares a localised setting of its own, whose schema is a map of locale to text (`{ 'en-GB': …, 'cy-GB': … }`); the catalogue needs no change for it, and the layer may add localised variants of its own keys later as new keys, a minor release.
+3. **Tenants with several root groups.** Any root group of the tenant governs its settings (§7.1). Each change records which one, and its approvers are found there. A designated root group would need Identity to name one, which it does not; adding it later narrows who may govern, so it would be contract version 2.
+4. **Membership.** Configuration stays a platform layer the host coordinates, not a member of the IAM suite: it follows iam-integration's approvals process for its own changes, consumes Identity's events through `applyConfigurationIdentityEvent`, and reaches the members only through its own reference adapters. A person's account values reach their data-subject export through the host (`exportConfigurationAccountData`); wiring that into iam-integration's request coordinator is iam-integration's change.

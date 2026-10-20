@@ -1,3 +1,6 @@
+/** Configuration's contract version (docs/contracts.md §16): frozen for 1.x. */
+export const CONFIGURATION_CONTRACT_VERSION = 1
+
 /**
  * Public contract for `@nuxt4-layers/configuration-service`.
  *
@@ -93,6 +96,7 @@ export {
   CRITICAL_FRESHNESS_MINUTES,
   decisionSchema,
   justificationSchema,
+  CONFIGURATION_RETENTION,
   meetsStepUp,
   requiredApprovals,
   subjectSchema,

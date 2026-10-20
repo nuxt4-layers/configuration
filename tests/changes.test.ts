@@ -477,6 +477,38 @@ describe.skipIf(!hasDatabase)('Pending changes and approvals (PostgreSQL)', () =
     expect(await fail(service.exportScope({ scope: { scope: 'account', identityId: alice } }))).toEqual({ code: 'validation-failed', reason: 'account-not-exportable' })
   })
 
+  it('deletes possibly-personal history and decided changes past the retention period, and nothing else', async () => {
+    const short = createConfigurationService({
+      pool,
+      schema: 'configuration',
+      catalogue: () => buildConfigurationCatalogue(CONFIGURATION_SETTINGS, HOST_SETTINGS),
+      deployment: () => ({}),
+      directory: () => world.directory,
+      tenants: () => world.tenantPort,
+      governance: () => world.governance,
+      access: () => world.access,
+      platformGroupId: () => platformGroup,
+      clock: () => ({ now: () => time }),
+      retentionDays: 30,
+    })
+    world.grant(alice, GROUP, child)
+    world.grant(bob, GROUP, child)
+    await request(alice, groupTarget(child), { 'site.tagline': 'Kept', 'contact.general': { email: 'hello@example.org' } })
+    const open = await request(alice, groupTarget(child), { 'organisation.legal-name': 'Still open' })
+    time = new Date(time.getTime() + 29 * 24 * HOUR)
+    expect((await short.runMaintenance()).retention).toEqual({ history: 0, changes: 0 })
+    time = new Date(time.getTime() + 2 * 24 * HOUR)
+    // The applied change goes; the one that expired was decided only on day 29, so it stays its 30 days.
+    const run = await short.runMaintenance()
+    expect(run.retention).toEqual({ history: 1, changes: 1 })
+    const { rows } = await pool.query(`select "key" from "configuration"."history"`)
+    expect(rows.map(row => row.key)).toEqual(['site.tagline'])
+    expect((await short.getConfiguration({ groupId: child, visibility: 'public' }))!.values['contact.general']).toEqual({ email: 'hello@example.org' })
+    expect((await events()).at(-1)).toMatchObject({ type: 'configuration.retention-applied', data: { history: 1, changes: 1 } })
+    const { rows: kept } = await pool.query(`select "status" from "configuration"."change" where "change_id" = $1`, [open.changeId])
+    expect(kept).toEqual([{ status: 'expired' }])
+  })
+
   it('relays the outbox in order, at least once', async () => {
     world.grant(alice, GROUP, child)
     await request(alice, groupTarget(child), { 'site.tagline': 'x' })

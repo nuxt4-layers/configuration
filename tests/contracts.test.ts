@@ -22,7 +22,57 @@ function imports(file: string): string[] {
 const contractFiles = files('shared')
 const catalogue = contracts.buildConfigurationCatalogue(contracts.CONFIGURATION_SETTINGS)
 
+/** Contract version 1 (docs/contracts.md §16). Removing or narrowing any of these needs contract version 2. */
+const VERSION_1_EXPORTS = [
+  'APPROVAL_FLOOR', 'CHANGE_ROUTES', 'CHANGE_STATUSES', 'CONFIGURATION_CONFLICT_REASONS', 'CONFIGURATION_DOCUMENT_FORMAT', 'CONFIGURATION_ERROR_CODES',
+  'CONFIGURATION_ERROR_STATUS', 'CONFIGURATION_PERMISSIONS', 'CONFIGURATION_RETENTION', 'CONFIGURATION_RISKS', 'CONFIGURATION_SCOPES', 'CONFIGURATION_SENSITIVITIES',
+  'CONFIGURATION_SETTINGS', 'CONFIGURATION_VISIBILITIES', 'CRITICAL_FRESHNESS_MINUTES', 'ConfigurationCompositionError', 'ConfigurationFailure', 'MANAGE_PERMISSION',
+  'REASON_CODE_PATTERN', 'RESERVED_NAMESPACES', 'SCOPE_RISK_FLOOR', 'SETTING_KEY_PATTERN', 'SOCIAL_NETWORKS', 'UUID_PATTERN',
+  'UUID_V7_PATTERN', 'VIEW_PERMISSION', 'assetReferenceSchema', 'buildConfigurationCatalogue', 'canonicalJson', 'changeTargetSchema',
+  'codeSchema', 'configurationChangeRequestSchema', 'configurationDocumentSchema', 'configurationEventSchema', 'contactPointSchema', 'correlationIdSchema',
+  'countryCodeSchema', 'decisionSchema', 'defineConfigurationSetting', 'digestSchema', 'emailSchema', 'highestRisk',
+  'hostNameSchema', 'httpsUrlSchema', 'identifierSchema', 'instantSchema', 'justificationSchema', 'linkSchema',
+  'localeSchema', 'meetsStepUp', 'phoneNumberSchema', 'postalAddressSchema', 'readPermission', 'reasonCodeSchema',
+  'requiredApprovals', 'resolveConfiguration', 'riskRank', 'safeTextSchema', 'scopeReferenceSchema', 'settingKeySchema',
+  'sitePathSchema', 'subjectSchema', 'visibilityRank',
+]
+
+/** The layer's catalogue at contract version 1, with each key's risk: a later release may add keys and raise risks, never remove or lower. */
+const VERSION_1_RISKS: Record<string, contracts.ConfigurationRisk> = {
+  'site.name': 'medium',
+  'site.host-names': 'high',
+  'site.tagline': 'low',
+  'site.default-locale': 'medium',
+  'site.logo': 'medium',
+  'site.default-theme': 'low',
+  'organisation.legal-name': 'high',
+  'organisation.trading-name': 'medium',
+  'organisation.registration': 'high',
+  'organisation.tax-number': 'high',
+  'organisation.registered-address': 'high',
+  'organisation.postal-address': 'medium',
+  'contact.general': 'medium',
+  'contact.data-protection': 'high',
+  'social.links': 'low',
+  'legal.links': 'high',
+  'seo.description': 'low',
+  'seo.image': 'low',
+  'seo.title-template': 'low',
+}
+
 describe('Configuration public contract', () => {
+  it('is contract version 1, and still exports everything version 1 did', () => {
+    expect(contracts.CONFIGURATION_CONTRACT_VERSION).toBe(1)
+    expect(Object.keys(contracts)).toEqual(expect.arrayContaining(VERSION_1_EXPORTS))
+  })
+
+  it('keeps every version 1 setting, at no lower a risk', () => {
+    for (const [key, risk] of Object.entries(VERSION_1_RISKS)) {
+      expect(catalogue.has(key), key).toBe(true)
+      expect(contracts.riskRank(catalogue.get(key)!.risk), key).toBeGreaterThanOrEqual(contracts.riskRank(risk))
+    }
+  })
+
   it('imports nothing but zod and its own modules', () => {
     for (const file of contractFiles) {
       for (const target of imports(file)) {
