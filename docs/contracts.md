@@ -15,7 +15,7 @@ Configuration answers one question: **what does this site, this tenant or this g
 | Approval requirements, safety periods, owners, recovery holds | Identity | The access-governance port (§11), for choosing an approval route (§7) |
 | Personal data and personal preferences (locale, time zone, chosen theme) | Profile | Never. A setting that must name a person holds Identity's identifier, and pages show the name through Profile |
 | Authentication, approval and access policy | Authentication, Identity, Authorisation | Never. A security setting belongs with the member it governs, under that member's controls |
-| Who may request or approve a change | Authorisation | The access-decision and approval-policy ports (§11) |
+| Who may request or approve a change | Authorisation | The access-decision port (§11) |
 | Theme definitions | Theme Manager | Never. A setting may name a default theme by identifier; Theme Manager validates it |
 | Secrets | The host's secret store | Never, under any visibility (§5) |
 | Files | The host's asset store | A reference only (§3.2) |
@@ -172,7 +172,7 @@ The requirement is the governing group's `approvals.required` for the change's r
 The **route** is chosen as Identity and Authorisation choose it:
 
 1. `none`: no approver required; the change applies at once.
-2. `approvers`: enough principals qualify in the governing group, by the approval-policy port (they hold the same permission now), other than the requester and the identities the requester controls. Service identities never qualify.
+2. `approvers`: enough principals qualify in the governing group, by the access-decision port (they hold the same permission now), other than the requester and the identities the requester controls. Service identities never qualify.
 3. Otherwise one owner of the governing group's **parent**; then one owner of the tenant's **root group** (for a change governed by a root group, that is itself, and the next fallback applies); owners from the access-governance port, never the requester. The owner fallbacks ask for one owner even where the group raised its requirement to two.
 4. Otherwise a **published delay** (`publishedDelayHighHours`, 72 by default, or `publishedDelayCriticalHours`, 168), the values in force for the governing group. The requester cannot shorten it and may cancel the change. The delay is announced (`configuration.change-requested` with route `published-delay`) so that anyone who would qualify can object by asking an owner to request a contrary change.
 
@@ -255,8 +255,7 @@ A change's risk is never below its permission's (§6, step 6). `high` and `criti
 | `ConfigurationDirectory` | For `group` scope and `members` visibility | Identity's directory port, through the host | A group's tenant, lineage, kind and state; the memberships in effect of an actor, and its `kind` |
 | `ConfigurationTenants` | For `tenant` scope | Identity, through the host | Whether a tenant exists, and its state |
 | `ConfigurationGovernance` | For changes | Identity's access-governance port (`getIdentityAccessGovernance`), through the host | The governing group's parent, root, approval requirement and reference rule, safety periods in force, the requester's recovery hold and controlled identities; owners for the fallbacks |
-| `ConfigurationAccessDecision` | For changes and reading | Authorisation, through the host | Whether the subject holds a permission (§10) on a group now |
-| `ConfigurationApprovalPolicy` | For changes | Authorisation (`authorisationQualifies`, `countAuthorisationQualifying`), through the host | A permission's risk; whether an approver qualifies now; how many others qualify, for the route |
+| `ConfigurationAccessDecision` | For changes and reading | Authorisation (`authorise`, `countAuthorisationQualifying`), through the host | Whether an identity holds a permission (§10) on a group now; how many others do, for the route; a permission's risk |
 | `ConfigurationSubjectResolver` | For the endpoints | Authentication, through the host | The signed-in subject for a request, with its `kind` and assurance (level, phishing resistance, `authenticatedAt`) |
 | `ConfigurationPlatformGroup` | For `platform` scope changes | Host | The platform group's identifier |
 | `ConfigurationClock` | No: the system clock without it | Host (the suite's one clock) | The current time for expiries, delays, holds and retention |

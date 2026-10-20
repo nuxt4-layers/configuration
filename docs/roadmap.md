@@ -2,20 +2,20 @@
 
 The layer is specified before it is built. Each phase keeps the [contract outline](contracts.md) in step with the code.
 
-## Phase 0: specification (this phase)
+## Phase 0: specification (done)
 
 - The README and the contract outline: boundaries, declarations, scopes (`platform`, `tenant`, `group`) and precedence, visibility, pending changes with approvals for `high` and `critical` settings, events, ports, server functions, HTTP API and presentation.
-- Decide the open questions in the contract's §17.
 
-## Phase 1: contract and core
+## Phase 1: contract and core (done)
 
 - `contracts/` and `shared/`: declaration, value, request, change and event schemas, the layer's catalogue, `canonicalJson` and the digest, importing only zod.
 - Storage under ADR-0002 and ADR-0006: append-only migrations, a runtime role that owns nothing, values, pending changes, history and the outbox.
 - Resolution with provenance through the group lineage; pending changes, approvals, routes and re-checks on applying; maintenance and the relay.
 - Tests proving: no undeclared key is stored; no inherited value confers access; a `high` change never applies without a second person or a published delay; an approval is bound to the digest; a change made against stale values is rejected; a service identity never requests or decides; no event carries a value.
 
-## Phase 2: endpoints and presentation
+## Phase 2: endpoints and presentation (next)
 
+- Decide the contract's open questions §17.1 (tenant resolution) and §17.5 (public group values), which the endpoints need.
 - `/api/configuration/*`, `useConfiguration()`, `useConfigurationHead()`, the `Configuration*` components and the administration and pending-changes pages, with axe in light and dark mode.
 
 ## Phase 3: composition

@@ -4,6 +4,10 @@
 Nuxt 4 foundation layer for the facts a site, a tenant or a group states about itself (site name, organisation details, contact points, links, presentation defaults). Governed by `nuxt4-layers/platform-architecture`; persistence follows ADR-0002 and ADR-0006. Not a member of the IAM suite, but follows iam-integration's approvals process for its own changes. British spelling everywhere, including code and the manifest.
 
 ## Commands
+- `pnpm install`, then `pnpm dev:prepare` for Nuxt types. Never add a `prepare`/`postinstall` script
+- `pnpm check` = `nuxt typecheck` + `vitest run`; run it after every code change. Single file: `pnpm vitest run tests/<name>.test.ts`
+- Database suites need `CONFIGURATION_TEST_DATABASE_URL` (admin URL of a local, disposable PostgreSQL 16); they skip locally without it and fail in CI
+- Never edit a released migration in `server/database/migrations.ts`; add a new one
 - `python3 scripts/check_markdown.py` checks headings, local links and that links to other `nuxt4-layers` documents are pinned to a tag or commit. Run it after every documentation change.
 
 ## Rules
@@ -14,4 +18,6 @@ Nuxt 4 foundation layer for the facts a site, a tenant or a group states about i
 - Members are reached only through ports the host supplies; never import another `@nuxt4-layers/*` package.
 - Events and logs carry identifiers, keys and codes only, never a value.
 - Required ports fail closed. No implicit in-memory or file fallback stores.
-- Keep `docs/contracts.md` and `docs/roadmap.md` in step with each other and, later, with code.
+- Contract (`contracts/`, `shared/`) imports only zod; enforced by `tests/contracts.test.ts`. `server/internal` and `server/database` are private.
+- Keep `docs/contracts.md` and `docs/roadmap.md` in step with code, briefly: this is a code repository, not a documentation exercise.
+- Package manager: pnpm. Commit `pnpm-lock.yaml`.

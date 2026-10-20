@@ -4,7 +4,7 @@ Nuxt 4 foundation layer for the facts a site states about itself and its organis
 
 A platform foundation layer, not a member of the Identity and Access Management (IAM) suite. It reaches [`identity`](https://github.com/nuxt4-layers/identity) and [`authorisation`](https://github.com/nuxt4-layers/authorisation) only through ports the host supplies, never imports them, and follows the suite's [approvals process](https://github.com/nuxt4-layers/iam-integration/blob/899befcf566775950c4b70b8cf0e7658be1000f9/docs/processes/approvals.md) for its own changes.
 
-**Status:** draft. No contract version is released yet; see the [contract outline](docs/contracts.md), its open questions and the [roadmap](docs/roadmap.md).
+**Status:** 0.1, phase 1 of the [roadmap](docs/roadmap.md): the contract and core (resolution, pending changes with approvals, storage, outbox) are built and tested; endpoints and pages are next. No contract version is released yet; see the [contract outline](docs/contracts.md).
 
 ## Owns
 
@@ -33,7 +33,7 @@ An organisation's address or contact point can still be personal data (a sole tr
 |---|---|---|
 | Consumes from Identity | Directory, access-governance and tenant ports | Groups' tenant, lineage, kind and state; a tenant's state; approval requirements, safety periods and owners for the approval route |
 | Consumes from Identity | Events `group.deleted`, `group.disposal-due`, `tenant.disposal-due` | Dispose of a group's or tenant's values |
-| Consumes from Authorisation | Access-decision and approval-policy ports | Whether the subject may request or approve a change, and how many others qualify |
+| Consumes from Authorisation | Access-decision port | Whether the subject may request or approve a change, and how many others qualify |
 | Consumes from the host | Subject resolver, database, clock, setting declarations | The signed-in subject and its assurance; storage under ADR-0002; the host's and other layers' own settings |
 | Provides to pages | `useConfiguration()`, `useConfigurationHead()`, `Configuration*` components | Values in force, head and SEO defaults, and administration pages with pending changes |
 | Provides to other layers, through the host | `getConfiguration()` | Values the host passes into other layers' ports (for example the site name in Authentication's emails) |
