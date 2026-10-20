@@ -17,6 +17,7 @@ The layer is specified before it is built. Each phase keeps the [contract outlin
 
 - Done: tenant by host name, `/api/configuration/*`, `useConfiguration()`, `useConfigurationHead()`, the public `Configuration*` components, a playground host, and the settings and changes pages (Theme Manager's vocabulary, axe in light and dark mode).
 
-## Phase 3: composition
+## Phase 3: composition (in progress)
 
-- A playground host with reference adapters to Identity's and Authorisation's server functions, and end-of-life handlers for `group.disposal-due` and `tenant.disposal-due`.
+- Done: reference adapters from Identity's directory and access governance, Authorisation's qualification and Authentication's principal; Identity's events applied once each (tenant states, and group and tenant disposal when due, never while deferred).
+- Next: compose the layer with the real members in `steve-r-lewis/platform-test-harness`, so the host's type check proves the adapters fit and the pages run against the suite.
