@@ -5,7 +5,8 @@ import { z } from 'zod'
  * setting declares it.
  */
 
-export const CONFIGURATION_SCOPES = ['platform', 'tenant', 'group'] as const
+/** `account`: a person's own account, which only that person reads or changes (docs/contracts.md §4.2). */
+export const CONFIGURATION_SCOPES = ['platform', 'tenant', 'group', 'account'] as const
 export type ConfigurationScopeKind = typeof CONFIGURATION_SCOPES[number]
 
 export const CONFIGURATION_VISIBILITIES = ['public', 'members', 'server'] as const
@@ -70,6 +71,8 @@ export function buildConfigurationCatalogue(own: readonly ConfigurationSettingDe
     if (catalogue.has(key)) throw new TypeError(`Setting '${key}' is declared twice.`)
     if (declaration.scopes.length === 0 || declaration.scopes.some(scope => !CONFIGURATION_SCOPES.includes(scope))) throw new TypeError(`Setting '${key}' needs at least one valid scope.`)
     if (!CONFIGURATION_VISIBILITIES.includes(declaration.visibility)) throw new TypeError(`Setting '${key}' has an invalid visibility.`)
+    // Nobody but the account's person reads an account's values, so none is public.
+    if (declaration.scopes.includes('account') && declaration.visibility === 'public') throw new TypeError(`Setting '${key}' is set per account, so it cannot be public.`)
     if (!CONFIGURATION_RISKS.includes(declaration.risk)) throw new TypeError(`Setting '${key}' has an invalid risk.`)
     if (!CONFIGURATION_SENSITIVITIES.includes(declaration.sensitivity)) throw new TypeError(`Setting '${key}' has an invalid sensitivity.`)
     if (declaration.default !== undefined && !declaration.schema.safeParse(declaration.default).success) throw new TypeError(`Setting '${key}' has a default its schema refuses.`)

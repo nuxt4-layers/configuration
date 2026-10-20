@@ -117,6 +117,19 @@ create table {{schema}}."processed_event" (
 );
 `,
   },
+  {
+    // A person's own account (docs/contracts.md §4.2): scope_id is the
+    // identity, tenant_id null (it is no tenant's data).
+    id: '0004_account_scope',
+    sql: `
+alter table {{schema}}."value" drop constraint "value_scope_check",
+  add constraint "value_scope_check" check ("scope" in ('platform', 'tenant', 'group', 'account')),
+  add constraint "value_account_check" check ("scope" <> 'account' or "tenant_id" is null);
+alter table {{schema}}."change" drop constraint "change_scope_check",
+  add constraint "change_scope_check" check ("scope" in ('platform', 'tenant', 'group', 'account')),
+  add constraint "change_account_check" check ("scope" <> 'account' or ("tenant_id" is null and "scope_id" = "requester_id" and "route" = 'none'));
+`,
+  },
 ]
 
 const SCHEMA_PATTERN = /^[a-z_][a-z0-9_]{0,62}$/

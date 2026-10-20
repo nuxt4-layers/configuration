@@ -5,7 +5,7 @@ import { pool, testMode, world } from '../../plugins/composition'
 /**
  * Browser tests only: a tenant answering on `localhost`, its root group and a
  * team, a manager (Alice), a second manager who approves (Bob) and a member
- * who may only read (Carol).
+ * who may only read (Carol). Alice has her own account.
  */
 export default defineEventHandler(async () => {
   if (!testMode || !pool) throw createError({ statusCode: 404 })
@@ -20,6 +20,7 @@ export default defineEventHandler(async () => {
     world.join(person, team)
   }
   world.join(carol, team)
+  world.account(alice, tenantId)
   await pool.query(`insert into "configuration"."value" ("scope", "scope_id", "tenant_id", "key", "value", "change_id", "updated_at") values ('tenant', $1, $1, 'site.host-names', '["localhost"]', $2, now())`, [tenantId, id()])
   return { tenantId, rootGroup, team, alice, bob, carol }
 })

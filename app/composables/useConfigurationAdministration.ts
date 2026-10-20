@@ -4,8 +4,9 @@ import { CONFIGURATION_ERROR_CODES } from '../../shared/contracts'
 /** A scope as the administration pages name it, from the route's query. */
 export type ConfigurationAdminScope =
   | { scope: 'platform' }
-  | { scope: 'tenant', governingGroupId: string }
+  | { scope: 'tenant', governingGroupId: string, tenantId?: string }
   | { scope: 'group', groupId: string }
+  | { scope: 'account' }
 
 export interface ConfigurationDeclarationView {
   key: string

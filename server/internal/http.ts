@@ -104,7 +104,7 @@ export function tenantOf(event: H3Event): Promise<string | null> {
  * administered from any host; the platform group's permission decides.
  */
 export function requireTargetInTenant(target: ConfigurationChangeTarget, tenantId: string | null): void {
-  if (target.scope === 'tenant' && target.tenantId !== tenantId) throw new ConfigurationFailure('forbidden')
+  if (tenantId !== null && target.scope === 'tenant' && target.tenantId !== tenantId) throw new ConfigurationFailure('forbidden')
 }
 
 export function identifierParam(event: H3Event, name: string): string {

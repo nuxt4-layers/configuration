@@ -9,6 +9,7 @@ export const scopeReferenceSchema = z.discriminatedUnion('scope', [
   z.strictObject({ scope: z.literal('platform') }),
   z.strictObject({ scope: z.literal('tenant'), tenantId: identifierSchema }),
   z.strictObject({ scope: z.literal('group'), groupId: identifierSchema }),
+  z.strictObject({ scope: z.literal('account'), identityId: identifierSchema }),
 ])
 
 export type ConfigurationScopeReference = z.infer<typeof scopeReferenceSchema>
@@ -16,6 +17,7 @@ export type ConfigurationScopeReference = z.infer<typeof scopeReferenceSchema>
 /** Where a value in force came from. */
 export type ConfigurationProvenance =
   | { source: 'locked' }
+  | { source: 'account' }
   | { source: 'group', groupId: string }
   | { source: 'tenant' }
   | { source: 'platform' }
@@ -29,6 +31,8 @@ export interface ConfigurationLayers {
   deployment: ConfigurationValues
   platform: ConfigurationValues
   tenant?: ConfigurationValues
+  /** A person's own account, asked about instead of a group. */
+  account?: ConfigurationValues
   /** The group asked about first, then its ancestors up to its root group. */
   lineage?: readonly { groupId: string, values: ConfigurationValues }[]
 }
@@ -55,6 +59,7 @@ export function resolveConfiguration(catalogue: ConfigurationCatalogue, layers: 
     if (visibilityRank(declaration.visibility) > visibilityRank(visibility)) continue
     const found = ((): [unknown, ConfigurationProvenance] | undefined => {
       if (declaration.locked) return has(layers.deployment, key) ? [layers.deployment[key], { source: 'locked' }] : undefined
+      if (declaration.scopes.includes('account') && has(layers.account, key)) return [layers.account![key], { source: 'account' }]
       if (declaration.scopes.includes('group') && layers.lineage) {
         const lineage = declaration.inherits === 'none' ? layers.lineage.slice(0, 1) : layers.lineage
         const group = lineage.find(entry => has(entry.values, key))

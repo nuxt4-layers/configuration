@@ -1,7 +1,8 @@
 import pg from 'pg'
+import { z } from 'zod'
 import { getCookie } from 'h3'
 import type { H3Event } from 'h3'
-import { UUID_V7_PATTERN } from '../../../shared/contracts'
+import { defineConfigurationSetting, UUID_V7_PATTERN } from '../../../shared/contracts'
 import { World } from '../../../tests/support/world'
 
 /**
@@ -21,6 +22,10 @@ export const world = new World()
 export let pool: pg.Pool | null = null
 
 export default defineNitroPlugin(async () => {
+  // A host's own setting, chosen per account (and defaulted by the platform or an organisation).
+  provideConfigurationCatalogue([
+    defineConfigurationSetting({ key: 'notices.digest', schema: z.enum(['daily', 'weekly', 'never']), scopes: ['platform', 'tenant', 'account'], visibility: 'members', sensitivity: 'organisational', risk: 'low', default: 'weekly' }),
+  ])
   provideConfigurationDeployment({ 'site.name': 'Configuration playground', 'seo.title-template': '%s · Configuration playground' })
   provideConfigurationSubjectResolver({
     async resolve(event) {

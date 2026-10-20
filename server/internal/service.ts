@@ -13,6 +13,8 @@ import type {
   ConfigurationEvent,
   ConfigurationGovernance,
   ConfigurationGovernedGroup,
+  ConfigurationPermission,
+  ConfigurationProvenance,
   ConfigurationRisk,
   ConfigurationScopeKind,
   ConfigurationSubject,
@@ -33,6 +35,7 @@ import {
   identifierSchema,
   MANAGE_PERMISSION,
   meetsStepUp,
+  readPermission,
   requiredApprovals,
   resolveConfiguration,
   riskRank,
@@ -43,13 +46,14 @@ import {
 import { quoteSchema } from '../database/migrations'
 
 /** Identity's events this layer consumes (Identity contract §11), checked strictly. */
-const IDENTITY_EVENT_TYPES = ['tenant.created', 'tenant.closing', 'tenant.closing-cancelled', 'tenant.closed', 'tenant.disposal-due', 'group.deleted', 'group.disposal-due'] as const
+const IDENTITY_EVENT_TYPES = ['tenant.created', 'tenant.closing', 'tenant.closing-cancelled', 'tenant.closed', 'tenant.disposal-due', 'group.deleted', 'group.disposal-due', 'identity.closed'] as const
 const envelope = { eventId: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/), occurredAt: z.string(), correlationId: correlationIdSchema }
 const identityEventSchema = z.discriminatedUnion('type', [
   z.object({ ...envelope, type: z.enum(['tenant.created', 'tenant.closing', 'tenant.closing-cancelled', 'tenant.disposal-due']), data: z.object({ tenantId: identifierSchema }) }),
   z.object({ ...envelope, type: z.literal('tenant.closed'), data: z.object({ tenantId: identifierSchema, disposal: z.enum(['due', 'deferred']) }) }),
   z.object({ ...envelope, type: z.literal('group.deleted'), data: z.object({ groupId: identifierSchema, tenantId: identifierSchema, disposal: z.enum(['due', 'deferred']) }) }),
   z.object({ ...envelope, type: z.literal('group.disposal-due'), data: z.object({ groupId: identifierSchema, tenantId: identifierSchema }) }),
+  z.object({ ...envelope, type: z.literal('identity.closed'), data: z.object({ identityId: identifierSchema }) }),
 ])
 const tenantSyncSchema = z.array(z.strictObject({ tenantId: identifierSchema, state: z.enum(['active', 'closing', 'closed']) })).max(10_000)
 import { timeFrom, uuidv7 } from './clock'
@@ -147,8 +151,16 @@ interface ChangeRow {
 function targetOf(row: Pick<ChangeRow, 'scope' | 'scope_id' | 'tenant_id' | 'governing_group_id'>): ConfigurationChangeTarget {
   if (row.scope === 'platform') return { scope: 'platform' }
   if (row.scope === 'tenant') return { scope: 'tenant', tenantId: row.scope_id, governingGroupId: row.governing_group_id }
+  if (row.scope === 'account') return { scope: 'account' }
   return { scope: 'group', groupId: row.scope_id }
 }
+
+/** The permission a scope's changes need; none for an account, which only its person changes. */
+function managePermission(scope: ConfigurationScopeKind): ConfigurationPermission | null {
+  return scope === 'account' ? null : MANAGE_PERMISSION[scope]
+}
+
+type DisposalReason = 'group-disposed' | 'tenant-disposed' | 'account-closed'
 
 /** The digest of everything a change will do and how it was routed (§7.3). */
 function changeDigest(row: Pick<ChangeRow, 'scope' | 'scope_id' | 'tenant_id' | 'governing_group_id' | 'requester_id' | 'risk' | 'justification' | 'set' | 'expected' | 'required_approvals' | 'route' | 'group_requirement' | 'owner_group_id'>): string {
@@ -234,15 +246,25 @@ export function createConfigurationService(deps: ServiceDependencies) {
   }
 
   /**
-   * The values in force for a tenant, or a group and its lineage, up to the
-   * visibility asked, with provenance (§4). `null` when the tenant or group
-   * does not exist, is closed or deleted, or is a personal group.
+   * The values in force for a tenant, a group and its lineage, or a
+   * person's account and their home tenant, up to the visibility asked, with
+   * provenance (§4). `null` when the tenant, group or account does not exist
+   * or is closed or deleted, or the group is a personal group.
    */
-  async function getConfiguration(input: { tenantId?: string, groupId?: string, keys?: readonly string[], visibility: ConfigurationVisibility }) {
+  async function getConfiguration(input: { tenantId?: string, groupId?: string, accountId?: string, keys?: readonly string[], visibility: ConfigurationVisibility }) {
     const tenantId = input.tenantId === undefined ? undefined : parse(() => identifierSchema.parse(input.tenantId))
     const groupId = input.groupId === undefined ? undefined : parse(() => identifierSchema.parse(input.groupId))
+    const accountId = input.accountId === undefined ? undefined : parse(() => identifierSchema.parse(input.accountId))
+    if (accountId !== undefined && (groupId !== undefined || tenantId !== undefined)) throw new ConfigurationFailure('validation-failed', 'account-alone')
     let lineage: readonly string[] = []
     let tenant = tenantId
+    if (accountId !== undefined) {
+      const actor = await port(() => deps.directory().describeActor(accountId, { consistency: 'bounded' }))
+      if (!actor || actor.kind !== 'person' || !actor.personalGroupId) return null
+      const personal = await port(() => deps.directory().describeGroup(actor.personalGroupId!, { consistency: 'bounded' }))
+      if (!personal || personal.kind !== 'personal' || personal.state === 'deleted') return null
+      tenant = personal.tenantId
+    }
     if (groupId !== undefined) {
       const group = await port(() => deps.directory().describeGroup(groupId, { consistency: 'bounded' }))
       if (!group || group.kind !== 'standard' || group.state === 'deleted') return null
@@ -258,12 +280,14 @@ export function createConfigurationService(deps: ServiceDependencies) {
       { scope: 'platform' as const, scopeId: '' },
       ...(tenant === undefined ? [] : [{ scope: 'tenant' as const, scopeId: tenant }]),
       ...lineage.map(id => ({ scope: 'group' as const, scopeId: id })),
+      ...(accountId === undefined ? [] : [{ scope: 'account' as const, scopeId: accountId }]),
     ]
     const stored = await storedValues({ query }, scopes)
     return resolveConfiguration(deps.catalogue(), {
       deployment: deps.deployment(),
       platform: stored.get('platform:')!,
       tenant: tenant === undefined ? undefined : stored.get(`tenant:${tenant}`),
+      account: accountId === undefined ? undefined : stored.get(`account:${accountId}`),
       lineage: lineage.map(id => ({ groupId: id, values: stored.get(`group:${id}`)! })),
     }, { keys: input.keys, visibility: input.visibility })
   }
@@ -276,8 +300,22 @@ export function createConfigurationService(deps: ServiceDependencies) {
     closed: ConfigurationConflictReason | null
   }
 
-  /** Finds a change target's scope and governing group (§7.1). Anything unknown, closed or deleted is `forbidden`. */
-  async function locate(target: ConfigurationChangeTarget): Promise<Located> {
+  /**
+   * Finds a change target's scope and governing group (§7.1). Anything
+   * unknown, closed or deleted is `forbidden`. An account is always the
+   * subject's own, governed by their personal group.
+   */
+  async function locate(target: ConfigurationChangeTarget, subjectId: string): Promise<Located> {
+    if (target.scope === 'account') {
+      const actor = await port(() => deps.directory().describeActor(subjectId, { consistency: 'strong' }))
+      if (!actor || actor.kind !== 'person' || !actor.personalGroupId) throw new ConfigurationFailure('forbidden')
+      const group = await port(() => deps.directory().describeGroup(actor.personalGroupId!, { consistency: 'strong' }))
+      if (!group || group.kind !== 'personal' || group.state === 'deleted') throw new ConfigurationFailure('forbidden')
+      const tenant = await port(() => tenantsPort().describeTenant(group.tenantId))
+      if (!tenant || tenant.state === 'closed') throw new ConfigurationFailure('forbidden')
+      const closed = tenant.state === 'closing' ? 'scope-closing' : group.state === 'active' ? null : 'scope-read-only'
+      return { scope: 'account', scopeId: subjectId, tenantId: null, governingGroupId: group.groupId, closed }
+    }
     if (target.scope === 'platform') {
       const governingGroupId = deps.platformGroupId()
       return { scope: 'platform', scopeId: '', tenantId: null, governingGroupId, closed: null }
@@ -298,7 +336,8 @@ export function createConfigurationService(deps: ServiceDependencies) {
   /** The governing group's facts; for a tenant, it must be a root group of that tenant. */
   async function governed(located: Located, identityId: string, correlationId: string): Promise<ConfigurationGovernedGroup | null> {
     const group = await port(() => deps.governance().describeGroup({ groupId: located.governingGroupId, identityId, correlationId }))
-    if (!group || group.kind !== 'standard' || group.state === 'deleted') return null
+    if (!group || group.kind !== (located.scope === 'account' ? 'personal' : 'standard') || group.state === 'deleted') return null
+    if (group.groupId !== located.governingGroupId) return null
     if (located.scope === 'tenant' && (group.tenantId !== located.tenantId || group.parentId !== null)) return null
     if (located.scope === 'group' && group.tenantId !== located.tenantId) return null
     return group
@@ -373,26 +412,32 @@ export function createConfigurationService(deps: ServiceDependencies) {
    * `members` values of a tenant they are a member of; for a group of the
    * request's tenant, `members` values as its member or with
    * `configuration.settings:view` on it, `public` ones as a member of the
-   * tenant, otherwise `forbidden`.
+   * tenant, otherwise `forbidden`. With `account`, a person's own account
+   * and home tenant, `members` values included; nobody else's.
    */
-  async function readForViewer(input: { subject: ConfigurationSubject | null, tenantId: string | null, groupId?: string }) {
+  async function readForViewer(input: { subject: ConfigurationSubject | null, tenantId: string | null, groupId?: string, account?: boolean }) {
     const tenantId = input.tenantId ?? undefined
     if (!input.subject) {
-      if (input.groupId !== undefined) throw new ConfigurationFailure('unauthenticated')
+      if (input.groupId !== undefined || input.account) throw new ConfigurationFailure('unauthenticated')
       return getConfiguration({ tenantId, visibility: 'public' })
     }
     const subject = parse(() => subjectSchema.parse(input.subject)) as ConfigurationSubject
+    if (input.account) {
+      if (input.groupId !== undefined) throw new ConfigurationFailure('validation-failed', 'account-alone')
+      const answer = subject.kind === 'person' ? await getConfiguration({ accountId: subject.identityId, visibility: 'members' }) : null
+      if (!answer) throw new ConfigurationFailure('forbidden')
+      return answer
+    }
     const actor = await port(() => deps.directory().describeActor(subject.identityId, { consistency: 'bounded' }))
     const memberships = actor?.memberships ?? []
     const memberOfTenant = tenantId === undefined || memberships.some(membership => membership.tenantId === tenantId)
     if (input.groupId === undefined) return getConfiguration({ tenantId, visibility: memberOfTenant ? 'members' : 'public' })
     const groupId = parse(() => identifierSchema.parse(input.groupId))
-    if (tenantId === undefined) throw new ConfigurationFailure('forbidden')
     const group = await port(() => deps.directory().describeGroup(groupId, { consistency: 'bounded' }))
-    if (!group || group.kind !== 'standard' || group.state === 'deleted' || group.tenantId !== tenantId) throw new ConfigurationFailure('forbidden')
+    if (!group || group.kind !== 'standard' || group.state === 'deleted' || (tenantId !== undefined && group.tenantId !== tenantId)) throw new ConfigurationFailure('forbidden')
     const visibility: ConfigurationVisibility | null = memberships.some(membership => membership.groupId === groupId) || await port(() => deps.access().allows({ identityId: subject.identityId, permission: VIEW_PERMISSION, groupId, consistency: 'bounded' }))
       ? 'members'
-      : memberships.some(membership => membership.tenantId === tenantId) ? 'public' : null
+      : memberships.some(membership => membership.tenantId === group.tenantId) ? 'public' : null
     if (!visibility) throw new ConfigurationFailure('forbidden')
     const answer = await getConfiguration({ groupId, visibility })
     if (!answer) throw new ConfigurationFailure('forbidden')
@@ -400,18 +445,32 @@ export function createConfigurationService(deps: ServiceDependencies) {
   }
 
   /**
-   * Over HTTP, a request reaches only its own tenant's scopes and changes
-   * (and the platform's). `undefined` is server code, which is not confined.
+   * Over HTTP, a request on a tenant's host name reaches only that tenant's
+   * scopes and changes (and the platform's). On a host name no tenant claims
+   * (`null`: the platform's own) and from server code (`undefined`), only
+   * Authorisation's decisions limit what a subject reaches.
    */
   function confine(scopeTenantId: string | null, requestTenantId: string | null | undefined): void {
-    if (requestTenantId === undefined || scopeTenantId === null) return
+    if (requestTenantId == null || scopeTenantId === null) return
     if (scopeTenantId !== requestTenantId) throw new ConfigurationFailure('forbidden')
   }
 
-  /** `configuration.settings:view` on the scope's governing group, which must govern it (§7.1). */
+  /**
+   * The read permission (`readPermission`) on the scope's governing group,
+   * which must govern it (§7.1). An account only for its own person.
+   */
   async function requireViewer(located: Located, subject: ConfigurationSubject): Promise<void> {
+    if (located.scope === 'account') {
+      if (located.scopeId !== subject.identityId) throw new ConfigurationFailure('forbidden')
+      return requirePerson(subject)
+    }
     if (located.scope === 'tenant' && !await governed(located, subject.identityId, uuidv7(now().getTime()))) throw new ConfigurationFailure('forbidden')
-    if (!await allows(subject.identityId, VIEW_PERMISSION, located.governingGroupId)) throw new ConfigurationFailure('forbidden')
+    if (!await allows(subject.identityId, readPermission(located.scope), located.governingGroupId)) throw new ConfigurationFailure('forbidden')
+  }
+
+  /** Where a value set at the located scope comes from, for provenance. */
+  function provenanceAt(located: Located): ConfigurationProvenance {
+    return located.scope === 'group' ? { source: 'group', groupId: located.scopeId } : { source: located.scope }
   }
 
   // ---------------------------------------------------------------- changes
@@ -453,7 +512,7 @@ export function createConfigurationService(deps: ServiceDependencies) {
     return rows as unknown as { approver_id: string, decision: 'approve' | 'reject', decided_at: Date }[]
   }
 
-  async function finish(client: Client, row: ChangeRow, status: ConfigurationChangeStatus, reasonCode: ConfigurationConflictReason | 'group-disposed' | 'tenant-disposed' | null, at: Date, actorId: string | null): Promise<void> {
+  async function finish(client: Client, row: ChangeRow, status: ConfigurationChangeStatus, reasonCode: ConfigurationConflictReason | DisposalReason | null, at: Date, actorId: string | null): Promise<void> {
     await client.query(`update ${s}."change" set "status" = $2, "reason_code" = $3, "decided_at" = $4 where "change_id" = $1`, [row.change_id, status, reasonCode, at])
     const approvers = (await loadApprovals(client, row.change_id)).filter(approval => approval.decision === 'approve').map(approval => approval.approver_id)
     await emit(client, 'configuration.change-decided', { changeId: row.change_id, outcome: status, approverIds: approvers, reasonCode }, row.correlation_id, actorId)
@@ -473,21 +532,22 @@ export function createConfigurationService(deps: ServiceDependencies) {
     if (changeDigest(row) !== row.digest) return reject('change-differs')
     let located: Located
     try {
-      located = await locate(targetOf(row))
+      located = await locate(targetOf(row), row.requester_id)
     }
     catch (error) {
       if (error instanceof ConfigurationFailure && error.code === 'forbidden') return reject('not-governing')
       throw error
     }
     if (located.closed) return reject(located.closed)
+    if (located.scopeId !== row.scope_id || located.governingGroupId !== row.governing_group_id) return reject('not-governing')
     const group = await governed(located, row.requester_id, row.correlation_id)
     if (!group) return reject('not-governing')
-    if (group.approvalsRequired[row.risk] > row.group_requirement) return reject('requirement-raised')
-    const permission = MANAGE_PERMISSION[row.scope]
-    if (!await allows(row.requester_id, permission, row.governing_group_id)) return reject('permission-lost')
+    const permission = managePermission(row.scope)
+    if (permission && group.approvalsRequired[row.risk] > row.group_requirement) return reject('requirement-raised')
+    if (permission && !await allows(row.requester_id, permission, row.governing_group_id)) return reject('permission-lost')
     const checked = checkKeys(row.scope, row.set)
     if (checked.problem || canonicalJson(checked.set) !== canonicalJson(row.set)) return reject('setting-changed')
-    const risk = highestRisk([...checked.risks, await port(() => deps.access().riskOf(permission)), SCOPE_RISK_FLOOR[row.scope]])
+    const risk = highestRisk([...checked.risks, ...permission ? [await port(() => deps.access().riskOf(permission))] : [], SCOPE_RISK_FLOOR[row.scope]])
     if (riskRank(risk) > riskRank(row.risk)) return reject('risk-raised')
     await lockScope(client, row.scope, row.scope_id)
     if (await valuesChanged(client, row.scope, row.scope_id, row.expected)) return reject('values-changed')
@@ -534,28 +594,29 @@ export function createConfigurationService(deps: ServiceDependencies) {
     const checked = checkKeys(requested.target.scope, requested.set)
     if (checked.problem) throw new ConfigurationFailure('validation-failed', checked.problem)
 
-    const located = await locate(requested.target)
+    const located = await locate(requested.target, subject.identityId)
     confine(located.tenantId, input.tenantId)
     await requirePerson(subject)
     const group = await governed(located, subject.identityId, correlationId)
     if (!group) throw new ConfigurationFailure('forbidden')
-    const permission = MANAGE_PERMISSION[located.scope]
-    if (!await allows(subject.identityId, permission, located.governingGroupId)) throw new ConfigurationFailure('forbidden')
+    const permission = managePermission(located.scope)
+    if (permission && !await allows(subject.identityId, permission, located.governingGroupId)) throw new ConfigurationFailure('forbidden')
     if (located.closed) throw new ConfigurationFailure('conflict', located.closed)
     if (group.referenceRequired && !requested.justification.reference) throw new ConfigurationFailure('validation-failed', 'reference-missing')
 
-    const risk = highestRisk([...checked.risks, await port(() => deps.access().riskOf(permission)), SCOPE_RISK_FLOOR[located.scope]])
+    const risk = highestRisk([...checked.risks, ...permission ? [await port(() => deps.access().riskOf(permission))] : [], SCOPE_RISK_FLOOR[located.scope]])
     const at = now()
     if (!meetsStepUp(risk, subject.assurance, at)) throw new ConfigurationFailure('insufficient-assurance')
 
-    // Requirement and route (§7.2).
-    const groupRequirement = group.approvalsRequired[risk]
-    let required = requiredApprovals(risk, groupRequirement)
+    // Requirement and route (§7.2). In their own account a person needs no
+    // approver, but still steps up and waits out a recovery hold.
+    const groupRequirement = permission ? group.approvalsRequired[risk] : 0
+    let required = permission ? requiredApprovals(risk, groupRequirement) : 0
     const excluding = [subject.identityId, ...group.controlledIdentityIds]
     let route: ConfigurationChangeRoute = 'none'
     let ownerGroupId: string | null = null
     if (required > 0) {
-      if (await port(() => deps.access().countQualifying({ permission, groupId: located.governingGroupId, excluding })) >= required) route = 'approvers'
+      if (await port(() => deps.access().countQualifying({ permission: permission!, groupId: located.governingGroupId, excluding })) >= required) route = 'approvers'
       else if (group.parentId && await port(() => deps.governance().countOwners({ groupId: group.parentId!, excluding })) >= 1) {
         route = 'parent-owner'
         ownerGroupId = group.parentId
@@ -630,7 +691,9 @@ export function createConfigurationService(deps: ServiceDependencies) {
 
   /** Whether the subject may decide the change now (§7.4). */
   async function mayDecide(row: ChangeRow, identityId: string): Promise<boolean> {
-    if (row.route === 'approvers') return allows(identityId, MANAGE_PERMISSION[row.scope], row.governing_group_id)
+    const permission = managePermission(row.scope)
+    if (!permission) return false
+    if (row.route === 'approvers') return allows(identityId, permission, row.governing_group_id)
     if (row.owner_group_id) return port(() => deps.governance().isOwner({ identityId, groupId: row.owner_group_id! }))
     return false
   }
@@ -690,8 +753,8 @@ export function createConfigurationService(deps: ServiceDependencies) {
     if (!row) throw new ConfigurationFailure('forbidden')
     confine(row.tenant_id, input.tenantId)
     const may = row.requester_id === subject.identityId
-      || await allows(subject.identityId, VIEW_PERMISSION, row.governing_group_id)
-      || (OPEN.includes(row.status) && await mayDecide(row, subject.identityId))
+      || (row.scope !== 'account' && (await allows(subject.identityId, readPermission(row.scope), row.governing_group_id)
+        || (OPEN.includes(row.status) && await mayDecide(row, subject.identityId))))
     if (!may) throw new ConfigurationFailure('forbidden')
     return view(row, await loadApprovals({ query }, changeId))
   }
@@ -699,24 +762,33 @@ export function createConfigurationService(deps: ServiceDependencies) {
   /**
    * A scope as an administrator edits it: the values set there with their
    * digests (the `expected` of a request), the values in force, and its open
-   * changes. Needs `configuration.settings:view` on the governing group.
+   * changes. Needs the read permission on the governing group; an account,
+   * its own person.
+   *
+   * Only the scope's own settings (§5.1): the values in force cover the keys
+   * the scope may set, and of those inherited from above only what the
+   * scope's members may read, never a `server` value set elsewhere.
    */
   async function readScope(input: { subject: ConfigurationSubject, target: ConfigurationChangeTarget, tenantId?: string | null }) {
     const subject = parse(() => subjectSchema.parse(input.subject)) as ConfigurationSubject
-    const located = await locate(input.target)
+    const located = await locate(input.target, subject.identityId)
     confine(located.tenantId, input.tenantId)
     await requireViewer(located, subject)
     const stored = (await storedValues({ query }, [{ scope: located.scope, scopeId: located.scopeId }])).get(`${located.scope}:${located.scopeId}`)!
-    // Administrators see every value they may edit, `server` ones included.
-    const inForce = located.scope === 'platform'
-      ? await getConfiguration({ visibility: 'server' })
-      : await getConfiguration({ ...(located.scope === 'tenant' ? { tenantId: located.scopeId } : { groupId: located.scopeId }), visibility: 'server' })
+    const declarations = describeDeclarations(located.scope)
+    const where = located.scope === 'platform' ? {} : located.scope === 'tenant' ? { tenantId: located.scopeId } : located.scope === 'group' ? { groupId: located.scopeId } : { accountId: located.scopeId }
+    const inForce = await getConfiguration({ ...where, keys: declarations.map(declaration => declaration.key), visibility: 'members' }) ?? { values: {}, provenance: {} }
+    for (const [key, value] of Object.entries(stored)) {
+      if (Object.hasOwn(inForce.values, key)) continue
+      inForce.values[key] = value
+      inForce.provenance[key] = provenanceAt(located)
+    }
     const { rows } = await query(`select * from ${s}."change" where "scope" = $1 and "scope_id" = $2 and "status" in ('awaiting', 'delayed') order by "requested_at"`, [located.scope, located.scopeId])
     return {
       viewerId: subject.identityId,
       tenantId: located.tenantId,
       target: input.target,
-      declarations: describeDeclarations(located.scope),
+      declarations,
       values: stored,
       digests: Object.fromEntries(Object.entries(stored).map(([key, value]) => [key, valueDigest(value)!])),
       inForce,
@@ -744,7 +816,7 @@ export function createConfigurationService(deps: ServiceDependencies) {
   /** §8: what applied changes did at a scope, newest first. */
   async function listHistory(input: { subject: ConfigurationSubject, target: ConfigurationChangeTarget, limit?: number, tenantId?: string | null }) {
     const subject = parse(() => subjectSchema.parse(input.subject)) as ConfigurationSubject
-    const located = await locate(input.target)
+    const located = await locate(input.target, subject.identityId)
     confine(located.tenantId, input.tenantId)
     await requireViewer(located, subject)
     const { rows } = await query(`select "change_id", "key", "previous", "next", "applied_at" from ${s}."history" where "scope" = $1 and "scope_id" = $2 order by "sequence" desc limit $3`, [located.scope, located.scopeId, Math.min(Math.max(input.limit ?? 100, 1), 500)])
@@ -796,7 +868,7 @@ export function createConfigurationService(deps: ServiceDependencies) {
     })
   }
 
-  async function dispose(where: string, id: string, scope: { scope: ConfigurationScopeKind, scopeId: string }, reasonCode: 'group-disposed' | 'tenant-disposed', correlationId: string): Promise<void> {
+  async function dispose(where: string, id: string, scope: { scope: ConfigurationScopeKind, scopeId: string }, reasonCode: DisposalReason, correlationId: string): Promise<void> {
     await transaction(async (client) => {
       const at = now()
       const { rows } = await client.query(`select * from ${s}."change" where ${where} and "status" in ('awaiting', 'delayed') for update`, [id])
@@ -820,6 +892,21 @@ export function createConfigurationService(deps: ServiceDependencies) {
     const tenantId = parse(() => identifierSchema.parse(input.tenantId))
     const correlationId = parse(() => correlationIdSchema.parse(input.correlationId))
     await dispose(`"tenant_id" = $1`, tenantId, { scope: 'tenant', scopeId: tenantId }, 'tenant-disposed', correlationId)
+  }
+
+  /** A closed identity's account: its values, changes and history (§14). */
+  async function disposeAccount(input: { identityId: string, correlationId: string }): Promise<void> {
+    const identityId = parse(() => identifierSchema.parse(input.identityId))
+    const correlationId = parse(() => correlationIdSchema.parse(input.correlationId))
+    await dispose(`"scope" = 'account' and "scope_id" = $1`, identityId, { scope: 'account', scopeId: identityId }, 'account-closed', correlationId)
+  }
+
+  /** A person's part of a data-subject export: their account's values and history. */
+  async function exportAccountData(input: { identityId: string }) {
+    const identityId = parse(() => identifierSchema.parse(input.identityId))
+    const values = await query(`select "key", "value", "updated_at" from ${s}."value" where "scope" = 'account' and "scope_id" = $1 order by "key"`, [identityId])
+    const history = await query(`select "change_id", "key", "previous", "next", "applied_at" from ${s}."history" where "scope" = 'account' and "scope_id" = $1 order by "sequence"`, [identityId])
+    return { identityId, values: values.rows, history: history.rows }
   }
 
   /** The tenant's part of a tenant export: its and its groups' values and history. */
@@ -871,15 +958,16 @@ export function createConfigurationService(deps: ServiceDependencies) {
     const fresh = await transaction(async (client) => {
       const { rowCount } = await client.query(`insert into ${s}."processed_event" ("event_id", "processed_at") values ($1, $2) on conflict do nothing`, [eventId, at])
       if (!rowCount) return false
-      if (type === 'tenant.created' || type === 'tenant.closing-cancelled') await setTenant(client, data.tenantId, 'active', at)
-      else if (type === 'tenant.closing') await setTenant(client, data.tenantId, 'closing', at)
-      else if (type === 'tenant.closed') await setTenant(client, data.tenantId, 'closed', at)
+      if (type === 'tenant.created' || type === 'tenant.closing-cancelled') await setTenant(client, (data as { tenantId: string }).tenantId, 'active', at)
+      else if (type === 'tenant.closing') await setTenant(client, (data as { tenantId: string }).tenantId, 'closing', at)
+      else if (type === 'tenant.closed') await setTenant(client, (data as { tenantId: string }).tenantId, 'closed', at)
       return true
     })
     if (!fresh) return false
     const disposal = 'disposal' in data ? data.disposal : 'due'
     if ((type === 'group.deleted' && disposal === 'due') || type === 'group.disposal-due') await disposeGroup({ groupId: (data as { groupId: string }).groupId, correlationId })
-    if ((type === 'tenant.closed' && disposal === 'due') || type === 'tenant.disposal-due') await disposeTenant({ tenantId: data.tenantId, correlationId })
+    if ((type === 'tenant.closed' && disposal === 'due') || type === 'tenant.disposal-due') await disposeTenant({ tenantId: (data as { tenantId: string }).tenantId, correlationId })
+    if (type === 'identity.closed') await disposeAccount({ identityId: (data as { identityId: string }).identityId, correlationId })
     return true
   }
 
@@ -908,7 +996,9 @@ export function createConfigurationService(deps: ServiceDependencies) {
     relayOutbox,
     disposeGroup,
     disposeTenant,
+    disposeAccount,
     exportTenantData,
+    exportAccountData,
   }
 }
 

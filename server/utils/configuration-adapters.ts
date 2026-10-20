@@ -45,6 +45,8 @@ export interface IdentityDirectoryLike {
   resolveActor(identityId: string, options: { consistency: 'strong' | 'bounded' }): Promise<{
     identityId: string
     kind: 'person' | 'service' | 'break-glass'
+    identityState: 'active' | 'paused' | 'suspended' | 'closure-pending' | 'closed'
+    personalGroup: { groupId: string } | null
     memberships: readonly { group: { groupId: string, tenantId: string }, effectiveStatus: 'active' | 'paused' | 'suspended' }[]
   } | null>
   describeGroup(groupId: string, options: { consistency: 'strong' | 'bounded' }): Promise<IdentityGroupDescriptionLike | null>
@@ -102,6 +104,8 @@ export function configurationDirectoryFromIdentity(directory: IdentityDirectoryL
       return {
         identityId: actor.identityId,
         kind: actor.kind === 'person' ? 'person' : 'service',
+        // An account is reachable only while its identity is active.
+        personalGroupId: actor.kind === 'person' && actor.identityState === 'active' ? actor.personalGroup?.groupId ?? null : null,
         memberships: actor.memberships.filter(membership => membership.effectiveStatus === 'active').map(membership => ({ groupId: membership.group.groupId, tenantId: membership.group.tenantId })),
       }
     },

@@ -41,6 +41,8 @@ export class World {
   /** permission → groupId → holders */
   readonly holders = new Map<string, Map<string, Set<string>>>()
   readonly services = new Set<string>()
+  /** identityId → personal group */
+  readonly personal = new Map<string, string>()
   /** identityId → memberships in effect */
   readonly memberships = new Map<string, { groupId: string, tenantId: string }[]>()
   readonly recoveryHolds = new Map<string, string>()
@@ -58,6 +60,14 @@ export class World {
   group(tenantId: string, parentId: string | null = null): string {
     const groupId = id()
     this.groups.set(groupId, { groupId, tenantId, parentId, kind: 'standard', state: 'active', approvalsRequired: { low: 0, medium: 0, high: 1, critical: 1 }, referenceRequired: false })
+    return groupId
+  }
+
+  /** A person's personal group in their home tenant. */
+  account(identityId: string, tenantId: string): string {
+    const groupId = id()
+    this.groups.set(groupId, { groupId, tenantId, parentId: null, kind: 'personal', state: 'active', approvalsRequired: { low: 0, medium: 0, high: 1, critical: 1 }, referenceRequired: false })
+    this.personal.set(identityId, groupId)
     return groupId
   }
 
@@ -103,7 +113,8 @@ export class World {
     },
     describeActor: async (identityId) => {
       this.check()
-      return { identityId, kind: this.services.has(identityId) ? 'service' : 'person', memberships: this.memberships.get(identityId) ?? [] }
+      const service = this.services.has(identityId)
+      return { identityId, kind: service ? 'service' : 'person', personalGroupId: service ? null : this.personal.get(identityId) ?? null, memberships: this.memberships.get(identityId) ?? [] }
     },
   }
 

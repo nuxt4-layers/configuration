@@ -87,19 +87,18 @@ A group's `organisation.*` settings describe a group that is itself a legal enti
 | `platform` | none: one per deployment | Every tenant and group, unless they set their own |
 | `tenant` | Identity's tenant identifier | The tenant and its groups |
 | `group` | Identity's group identifier, of a `standard` group | The group and, for settings that inherit, its descendants |
-
-Personal groups have no scope: Identity gives them no settings, and nothing here describes a person.
+| `account` | The person's identity (never named in a request: always the subject's own) | That person alone (§4.2) |
 
 The value in force for a key is the first of:
 
 1. the deployment value, when the declaration is `locked`;
-2. for a group, its own value; then, when the declaration `inherits` by `lineage`, the nearest ancestor's value, from its parent up to its root group;
-3. the tenant's value;
+2. for an account, its own value; for a group, its own value; then, when the declaration `inherits` by `lineage`, the nearest ancestor's value, from its parent up to its root group;
+3. the tenant's value (for an account, the person's home tenant, that of their personal group);
 4. the platform value;
 5. the deployment value (`app.config.ts` under `configuration.values`, or `NUXT_PUBLIC_CONFIGURATION_*`);
 6. the declared default.
 
-Each answer carries its **provenance** per key (`locked`, `group` with the group's identifier, `tenant`, `platform`, `deployment`, `default`), so the administration page shows what a scope sets and what it inherits, and a scope can clear its value to inherit again.
+Each answer carries its **provenance** per key (`locked`, `account`, `group` with the group's identifier, `tenant`, `platform`, `deployment`, `default`), so the administration page shows what a scope sets and what it inherits, and a scope can clear its value to inherit again.
 
 Inheriting a value is presentational: it confers nothing. Who may change or read a group's values comes from Authorisation for that group (§7, §5), never from the hierarchy, following the Group Model Definition's no-implicit-inheritance rule.
 
@@ -116,7 +115,13 @@ The lineage comes from Identity's directory port at every read (`bounded`) and e
 
 ### 4.1 Tenant by host name
 
-A request's tenant is the one whose `site.host-names` (a `high`, tenant-only, `server` setting) holds the request's host name, lower case and without port; no tenant matches → platform values only. A host name belongs to one tenant at most: a change claiming one another tenant holds is refused (`conflict`, `host-taken`), at request and again on applying. `X-Forwarded-Host` is read only when the host sets `NUXT_CONFIGURATION_TRUST_FORWARDED_HOST` behind its own proxy. Over HTTP, a request reaches only its own tenant's scopes and changes, and the platform's.
+A request's tenant is the one whose `site.host-names` (a `high`, tenant-only, `server` setting) holds the request's host name, lower case and without port; no tenant matches → platform values only. A host name belongs to one tenant at most: a change claiming one another tenant holds is refused (`conflict`, `host-taken`), at request and again on applying. `X-Forwarded-Host` is read only when the host sets `NUXT_CONFIGURATION_TRUST_FORWARDED_HOST` behind its own proxy. Over HTTP, a request on a tenant's host name reaches only that tenant's scopes and changes, and the platform's. On a host name no tenant claims (the platform's own, e.g. an operators' console), a subject reaches any scope Authorisation lets them, naming a tenant with `?tenantId=`: this is where a tenant gets its first host name.
+
+### 4.2 Accounts
+
+A person's own settings, for what a host or another layer declares per account (the built-in catalogue declares none). An account is governed by the person's personal group and follows Identity's personal-group sovereignty: only that person reads or changes it, with no approver, but stepping up to the change's risk and waiting out a recovery hold. No permission reaches another person's account, whoever holds it. Service identities have none. An account is reachable only while its identity is active; `identity.closed` disposes of it (§14).
+
+An account's values must not describe the person: names, contact details, locale, time zone and chosen theme are Profile's. A setting declared for `account` is never `public`. Its values are no tenant's data: they are left out of tenant exports and are in the person's own export (`exportConfigurationAccountData`).
 
 ## 5. Visibility
 
@@ -126,7 +131,11 @@ A request's tenant is the one whose `site.host-names` (a `high`, tenant-only, `s
 | `members` | A signed-in subject with a membership in effect in the tenant (for platform values, any signed-in subject) | A subject with a membership in effect in the group itself; membership of an ancestor is not enough |
 | `server` | Server functions only; never over HTTP | Likewise |
 
-A subject holding `configuration.settings:view` on the scope's governing group (§7.1) reads every value set there, `server` ones included, to administer them. Group values are never served anonymously, and a group cannot opt in to it.
+A subject holding the read permission on the scope's governing group (§7.1) reads every value set there, `server` ones included, to administer them: `configuration.settings:view`, but for the platform `configuration.platform-settings:manage`, so only those who may change the hosting application's settings read them as administrators.
+
+### 5.1 What an administrator sees
+
+Only the scope's own settings. The values in force an administrator is shown cover the keys the scope may set, and of those inherited from above only what the scope's members may read: never a `server` value set at a scope above, and never a setting the scope cannot set. Inheriting confers nothing (§4), so a deeper administrator reaches only the scopes Authorisation gives them, and of those, only what is theirs. Group values are never served anonymously, and a group cannot opt in to it.
 
 There is no `secret` visibility. A secret is never a setting, whatever its visibility: the host keeps it in its secret store and passes it to the layer that uses it.
 
@@ -166,6 +175,7 @@ Approvals in the suite are decided in a group. Each scope has one:
 | `group` | The group itself | `configuration.group-settings:manage` |
 | `tenant` | A root group of the tenant, named by the request; the access-governance port confirms it is a root group of that tenant | `configuration.tenant-settings:manage` |
 | `platform` | The platform group the host designates (`provideConfigurationPlatformGroup`), as Identity uses it for platform-wide changes | `configuration.platform-settings:manage` |
+| `account` | The person's personal group | None: the person alone, with no approver |
 
 A tenant with several root groups may have its settings changed from any of them by someone who holds the permission there; each change records which one governed it, and its approvers are found there.
 
@@ -232,7 +242,7 @@ Written to Configuration's transactional outbox in the same transaction as the c
 | `configuration.change-held` | `changeId`, `heldUntil` |
 | `configuration.change-decided` | `changeId`, `outcome` (`applied`, `rejected`, `expired`, `cancelled`), the approvers, a `reasonCode` when rejected |
 | `configuration.changed` | `scope`, scope identifier, the keys set or cleared, `changeId` |
-| `configuration.reset` | `scope`, scope identifier, `reasonCode` (`tenant-disposed`, `group-disposed`) |
+| `configuration.reset` | `scope`, scope identifier, `reasonCode` (`tenant-disposed`, `group-disposed`, `account-closed`) |
 | `configuration.retention-applied` | How many history rows and pending changes were deleted, when a run deleted any |
 
 Events carry identifiers, keys and codes only: never a value. Notification capabilities tell approvers from `configuration.change-requested`; a consumer that needs a value reads it through `getConfiguration`.
@@ -243,12 +253,12 @@ For the host to add to Authorisation's catalogue (`CONFIGURATION_PERMISSIONS`):
 
 | Permission | Risk | Effect | Allows |
 |---|---|---|---|
-| `configuration.settings:view` | `low` | `view` | Reading a scope's values (but `server` ones), history and pending changes, on its governing group |
+| `configuration.settings:view` | `low` | `view` | Reading a tenant's or group's values, history and pending changes, on its governing group |
 | `configuration.group-settings:manage` | `medium` | `manage` | Requesting and approving changes to a group's values, on the group |
 | `configuration.tenant-settings:manage` | `high` | `manage` | Requesting and approving changes to a tenant's values, on a root group of the tenant |
-| `configuration.platform-settings:manage` | `critical` | `manage` | Requesting and approving changes to platform values, on the platform group |
+| `configuration.platform-settings:manage` | `critical` | `manage` | Reading, requesting and approving changes to platform values, on the platform group |
 
-A change's risk is never below its permission's (§6, step 6). `high` and `critical` permissions are outside Authorisation's wildcards; a host names them in roles explicitly.
+A change's risk is never below its permission's (§6, step 6). `high` and `critical` permissions are outside Authorisation's wildcards; a host names them in roles explicitly. With the suite's default roles, only the platform group's owners hold `configuration.platform-settings:manage`: the hosting application's own settings belong to its super administrators, and to nobody else unless explicitly granted.
 
 ## 11. Ports
 
@@ -256,7 +266,7 @@ A change's risk is never below its permission's (§6, step 6). `high` and `criti
 |---|---|---|---|
 | `ConfigurationDatabase` | Yes | Host | PostgreSQL pool (runtime role), schema, and optionally the migration pool, under ADR-0002 and ADR-0006 |
 | `ConfigurationCatalogue` | Yes | Host | The host's and other layers' declarations (§3.1), added to the layer's own |
-| `ConfigurationDirectory` | For `group` scope and `members` visibility | Identity's directory port, through the host | A group's tenant, lineage, kind and state; the memberships in effect of an actor, and its `kind` |
+| `ConfigurationDirectory` | For `group` and `account` scopes and `members` visibility | Identity's directory port, through the host | A group's tenant, lineage, kind and state; an actor's `kind`, memberships in effect and, while active, personal group |
 | `ConfigurationTenants` | No: without it, the states Identity's tenant events announced (§14) | Identity, through the host | Whether a tenant exists, and its state |
 | `ConfigurationGovernance` | For changes | Identity's access-governance port (`getIdentityAccessGovernance`), through the host | The governing group's parent, root, approval requirement and reference rule, safety periods in force, the requester's recovery hold and controlled identities; owners for the fallbacks |
 | `ConfigurationAccessDecision` | For changes and reading | Authorisation (`authorise`, `countAuthorisationQualifying`), through the host | Whether an identity holds a permission (§10) on a group now; how many others do, for the route; a permission's risk |
@@ -271,7 +281,7 @@ Required ports fail closed: a failure is `unavailable` and records nothing. Ther
 | Function | Does |
 |---|---|
 | `migrateConfigurationDatabase()` | Applies append-only migrations through the migration pool |
-| `getConfiguration({ tenantId?, groupId?, keys?, visibility })` | Values in force with provenance (§4), up to the visibility asked; server code passes `server` |
+| `getConfiguration({ tenantId?, groupId?, accountId?, keys?, visibility })` | Values in force with provenance (§4), up to the visibility asked; server code passes `server` |
 | `getConfigurationChanges()` | `request`, `decide`, `cancel`, `get` and `listForScope` (§6, §7); the endpoints and pages call it |
 | `listConfigurationHistory({ subject, scope, scopeId?, keys?, before?, limit? })` | §8 |
 | `exportConfiguration({ scope, scopeId? })` | A versioned document of a scope's values, for moving them between environments. Server-only |
@@ -280,6 +290,7 @@ Required ports fail closed: a failure is `unavailable` and records nothing. Ther
 | `applyConfigurationIdentityEvent(event)` | The host's handler for Identity's relayed events (§14). Idempotent by event id. Server-only |
 | `syncConfigurationTenants(tenants)` | Records tenants that existed before the layer was installed, which no `tenant.created` will announce. Server-only |
 | `disposeConfigurationGroup({ groupId, correlationId })` | A deleted group's part of its disposal (§14). Server-only |
+| `exportConfigurationAccountData({ identityId })`, `disposeConfigurationAccount({ identityId, correlationId })` | A person's account in their data-subject export, and its disposal on closure (§4.2, §14). Server-only |
 | `relayConfigurationOutbox({ publish, limit? })` | §9 |
 | `runConfigurationMaintenance()` | Expires, applies delayed and released changes (§7.6), and applies retention (§8) |
 
@@ -301,13 +312,13 @@ Under `/api/configuration`. Endpoints take the subject only from the host's reso
 | Method and path | Access | Does |
 |---|---|---|
 | `GET /public` | Anyone | `public` platform and tenant values in force for the request's tenant (§4.1), with an `ETag` and a short `Cache-Control` |
-| `GET /` | Signed in | Adds `members` values, and with `?groupId=` a group's values the subject may read (§5) |
-| `GET /admin?scope=…&groupId=…&governingGroupId=…` | `configuration.settings:view` | Values, provenance, declarations and open changes, for editing |
+| `GET /` | Signed in | Adds `members` values, with `?groupId=` a group's values the subject may read (§5), and with `?scope=account` the subject's own account (§4.2) |
+| `GET /admin?scope=…&groupId=…&governingGroupId=…` | The read permission (§5); `scope=account`, the person | The scope's own values, provenance, declarations and open changes, for editing (§5.1) |
 | `POST /changes` | §6 | Requests a change |
 | `GET /changes/{changeId}` | §7.7 | One change, with its values for those who may decide it |
 | `POST /changes/{changeId}/decision` | §7.4 | Approves or rejects, with the digest shown |
 | `POST /changes/{changeId}/cancel` | The requester | Cancels |
-| `GET /history?scope=…` | `configuration.settings:view` | §8 |
+| `GET /history?scope=…` | The read permission (§5); `scope=account`, the person | §8 |
 
 Import, export, disposal, maintenance and the relay are never endpoints.
 
@@ -324,7 +335,7 @@ Import, export, disposal, maintenance and the relay are never endpoints.
 
 ## 14. End of life
 
-The host relays Identity's events to `applyConfigurationIdentityEvent`, which applies each once: `tenant.created`, `tenant.closing`, `tenant.closing-cancelled` and `tenant.closed` keep the tenant states (a closed tenant stays closed); `group.deleted` and `tenant.closed` with `disposal: 'due'`, and `group.disposal-due` and `tenant.disposal-due`, dispose as below. A deferred disposal (a legal hold) disposes of nothing until Identity says it is due. Other events are ignored.
+The host relays Identity's events to `applyConfigurationIdentityEvent`, which applies each once: `tenant.created`, `tenant.closing`, `tenant.closing-cancelled` and `tenant.closed` keep the tenant states (a closed tenant stays closed); `group.deleted` and `tenant.closed` with `disposal: 'due'`, and `group.disposal-due` and `tenant.disposal-due`, dispose as below; `identity.closed` disposes of the identity's account (`account-closed`). A deferred disposal (a legal hold) disposes of nothing until Identity says it is due. Other events are ignored.
 
 
 - **Group deletion** ([group deletion](https://github.com/nuxt4-layers/iam-integration/blob/899befcf566775950c4b70b8cf0e7658be1000f9/docs/processes/group-deletion.md)): a deleted group's values stop resolving at once, because Identity's directory answers it as deleted (§4). When the disposal is due, `disposeConfigurationGroup` cancels its open changes, deletes its values, changes and history, and emits `configuration.reset` (`group-disposed`).

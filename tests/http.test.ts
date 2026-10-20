@@ -208,6 +208,26 @@ describe.skipIf(!hasDatabase)('the /api/configuration endpoints', () => {
     const admin = await call('GET', `http://bravo.test/api/configuration/admin?scope=tenant&governingGroupId=${rootB}`, { as: dave })
     expect(admin.status).toBe(200)
     expect(admin.data.values['site.host-names']).toEqual(['bravo.test'])
+    // Another tenant's host cannot name this tenant in the query either.
+    expect((await call('GET', `http://acme.test/api/configuration/admin?scope=tenant&tenantId=${tenantB}&governingGroupId=${rootB}`, { as: dave })).status).toBe(403)
+  })
+
+  it('administers any scope Authorisation allows on the platform\'s own host name, where a tenant gets its first one', async () => {
+    world.grant(dave, TENANT, rootB)
+    world.grant(carol, TENANT, rootB)
+    world.grant(dave, 'configuration.settings:view', rootB)
+    await pool.query(`delete from "configuration"."value" where "key" = 'site.host-names' and "scope_id" = $1`, [tenantB])
+    const admin = await call('GET', `http://platform.test/api/configuration/admin?scope=tenant&tenantId=${tenantB}&governingGroupId=${rootB}`, { as: dave })
+    expect(admin.status).toBe(200)
+    const claim = await call('POST', 'http://platform.test/api/configuration/changes', {
+      as: dave,
+      body: { target: { scope: 'tenant', tenantId: tenantB, governingGroupId: rootB }, set: { 'site.host-names': ['bravo.example'] }, expected: { 'site.host-names': null }, justification: { reasonCode: 'new-domain' } },
+    })
+    expect(claim.data).toMatchObject({ status: 'awaiting', route: 'approvers' })
+    expect((await call('POST', `http://platform.test/api/configuration/changes/${claim.data.changeId}/decision`, { as: carol, body: { changeDigest: claim.data.digest, decision: 'approve' } })).data.status).toBe('applied')
+    expect((await call('GET', 'http://bravo.example/api/configuration/public')).data.values['site.name']).toBe('Bravo')
+    // Without the permission, the platform's host reaches nothing.
+    expect((await call('GET', `http://platform.test/api/configuration/admin?scope=tenant&tenantId=${tenantB}&governingGroupId=${rootB}`, { as: alice })).status).toBe(403)
   })
 
   it('refuses a host name another tenant answers on', async () => {
@@ -223,6 +243,20 @@ describe.skipIf(!hasDatabase)('the /api/configuration endpoints', () => {
     })
     expect(claim.status).toBe(409)
     expect(claim.data).toMatchObject({ code: 'conflict', reason: 'host-taken' })
+  })
+
+  it('serves a person their own account only, on any host, and never takes another\'s identity', async () => {
+    world.account(alice, tenantA)
+    expect((await call('GET', 'http://acme.test/api/configuration?scope=account')).status).toBe(401)
+    const own = await call('GET', 'http://bravo.test/api/configuration?scope=account', { as: alice })
+    expect(own.status).toBe(200)
+    expect(own.data.values['site.name']).toBe('Acme')
+    const admin = await call('GET', 'http://acme.test/api/configuration/admin?scope=account', { as: alice })
+    expect(admin.status).toBe(200)
+    expect(admin.data).toMatchObject({ target: { scope: 'account' }, tenantId: null, declarations: [], values: {} })
+    expect((await call('GET', 'http://acme.test/api/configuration/admin?scope=account', { as: carol })).status).toBe(403)
+    const named = await call('POST', 'http://acme.test/api/configuration/changes', { as: alice, body: { target: { scope: 'account', identityId: bob }, set: { 'site.tagline': 'x' }, expected: { 'site.tagline': null }, justification: { reasonCode: 'update' } } })
+    expect(named.status).toBe(400)
   })
 
   it('stays coarse: unknown changes are forbidden, bad bodies name only a problem code', async () => {

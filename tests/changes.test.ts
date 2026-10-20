@@ -1,7 +1,8 @@
 import pg from 'pg'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { ConfigurationChange, ConfigurationChangeTarget, ConfigurationEvent, ConfigurationSubject } from '../shared/contracts'
-import { buildConfigurationCatalogue, CONFIGURATION_SETTINGS, ConfigurationFailure, configurationEventSchema } from '../shared/contracts'
+import { z } from 'zod'
+import { buildConfigurationCatalogue, CONFIGURATION_SETTINGS, ConfigurationFailure, configurationEventSchema, defineConfigurationSetting } from '../shared/contracts'
 import { runConfigurationMigrations } from '../server/database/migrations'
 import { createConfigurationService, valueDigest } from '../server/internal/service'
 import { createTestDatabase, hasDatabase, requireDatabaseInCi } from './support/database'
@@ -14,6 +15,12 @@ const GROUP = 'configuration.group-settings:manage'
 const TENANT = 'configuration.tenant-settings:manage'
 const PLATFORM = 'configuration.platform-settings:manage'
 const VIEW = 'configuration.settings:view'
+
+/** A host's own settings, set per account: an organisation may choose the default, each person their own. */
+const HOST_SETTINGS = [
+  defineConfigurationSetting({ key: 'notices.digest', schema: z.enum(['daily', 'weekly', 'never']), scopes: ['platform', 'tenant', 'account'], visibility: 'members', sensitivity: 'organisational', risk: 'low' }),
+  defineConfigurationSetting({ key: 'notices.webhook', schema: z.string().startsWith('https://'), scopes: ['account'], visibility: 'server', sensitivity: 'organisational', risk: 'high' }),
+]
 
 describe.skipIf(!hasDatabase)('Pending changes and approvals (PostgreSQL)', () => {
   let database: Awaited<ReturnType<typeof createTestDatabase>>
@@ -45,7 +52,7 @@ describe.skipIf(!hasDatabase)('Pending changes and approvals (PostgreSQL)', () =
     let expected = options.expected
     if (!expected) {
       expected = {}
-      const scope = target.scope === 'platform' ? ['platform', ''] : target.scope === 'tenant' ? ['tenant', target.tenantId] : ['group', target.groupId]
+      const scope = target.scope === 'platform' ? ['platform', ''] : target.scope === 'tenant' ? ['tenant', target.tenantId] : target.scope === 'account' ? ['account', subject] : ['group', target.groupId]
       const { rows } = await pool.query(`select "key", "value" from "configuration"."value" where "scope" = $1 and "scope_id" = $2`, scope)
       for (const key of Object.keys(set)) expected[key] = valueDigest(rows.find(row => row.key === key)?.value)
     }
@@ -91,7 +98,7 @@ describe.skipIf(!hasDatabase)('Pending changes and approvals (PostgreSQL)', () =
     service = createConfigurationService({
       pool,
       schema: 'configuration',
-      catalogue: () => buildConfigurationCatalogue(CONFIGURATION_SETTINGS),
+      catalogue: () => buildConfigurationCatalogue(CONFIGURATION_SETTINGS, HOST_SETTINGS),
       deployment: () => ({}),
       directory: () => world.directory,
       tenants: () => world.tenantPort,
@@ -340,6 +347,104 @@ describe.skipIf(!hasDatabase)('Pending changes and approvals (PostgreSQL)', () =
     expect(await count()).toBe(0)
     expect((await pool.query(`select count(*)::int as n from "configuration"."history"`)).rows[0].n).toBe(0)
     expect((await events()).filter(event => event.type === 'configuration.reset')).toHaveLength(2)
+  })
+
+  it('shows a group\'s administrators only the group\'s own settings, never a server value set above it', async () => {
+    world.grant(alice, TENANT, root)
+    world.grant(bob, TENANT, root)
+    world.grant(carol, VIEW, child)
+    world.join(carol, child)
+    const tenantTarget: ConfigurationChangeTarget = { scope: 'tenant', tenantId, governingGroupId: root }
+    await approve(bob, await request(alice, tenantTarget, { 'site.host-names': ['acme.example'] }))
+    await approve(bob, await request(alice, tenantTarget, { 'site.name': 'Acme', 'site.tagline': 'From the organisation' }))
+    const scope = await service.changes.readScope({ subject: at(carol), target: groupTarget(child) })
+    const keys = scope.declarations.map(declaration => declaration.key)
+    expect(Object.keys(scope.inForce.values).every(key => keys.includes(key))).toBe(true)
+    expect(scope.inForce.values).not.toHaveProperty('site.host-names')
+    expect(scope.inForce.values).not.toHaveProperty('site.name')
+    expect(scope.inForce.values['site.tagline']).toBe('From the organisation')
+    expect(scope.inForce.provenance['site.tagline']).toEqual({ source: 'tenant' })
+    // The tenant's own administrators still see and edit its server values.
+    world.grant(alice, VIEW, root)
+    const tenant = await service.changes.readScope({ subject: at(alice), target: tenantTarget })
+    expect(tenant.values['site.host-names']).toEqual(['acme.example'])
+    expect(tenant.inForce.values['site.host-names']).toEqual(['acme.example'])
+  })
+
+  it('lets only those who may change the platform\'s settings read them: viewing the platform group is not enough', async () => {
+    // An administrator of the platform group holds every low and medium permission there, but not the critical one.
+    world.grant(carol, VIEW, platformGroup)
+    world.grant(carol, GROUP, platformGroup)
+    world.grant(alice, PLATFORM, platformGroup)
+    world.grant(bob, PLATFORM, platformGroup)
+    const change = await request(alice, { scope: 'platform' }, { 'site.name': 'Platform' })
+    expect(await fail(service.changes.readScope({ subject: at(carol), target: { scope: 'platform' } }))).toEqual({ code: 'forbidden', reason: undefined })
+    expect(await fail(service.listHistory({ subject: at(carol), target: { scope: 'platform' } }))).toEqual({ code: 'forbidden', reason: undefined })
+    expect(await fail(service.changes.get({ subject: at(carol), changeId: change.changeId }))).toEqual({ code: 'forbidden', reason: undefined })
+    expect(await fail(request(carol, { scope: 'platform' }, { 'site.tagline': 'x' }))).toEqual({ code: 'forbidden', reason: undefined })
+    expect(await fail(approve(carol, change))).toEqual({ code: 'forbidden', reason: undefined })
+    expect((await service.changes.readScope({ subject: at(bob), target: { scope: 'platform' } })).openChanges.map(open => open.changeId)).toEqual([change.changeId])
+  })
+
+  it('lets a person change their own account at once, with no approver, over the organisation\'s default', async () => {
+    world.account(alice, tenantId)
+    world.grant(bob, TENANT, root)
+    world.grant(carol, TENANT, root)
+    await approve(carol, await request(bob, { scope: 'tenant', tenantId, governingGroupId: root }, { 'notices.digest': 'daily' }))
+    expect((await service.getConfiguration({ accountId: alice, visibility: 'members' }))!.provenance['notices.digest']).toEqual({ source: 'tenant' })
+    const change = await request(alice, { scope: 'account' }, { 'notices.digest': 'weekly' })
+    expect(change).toMatchObject({ target: { scope: 'account' }, route: 'none', status: 'applied', requiredApprovals: 0 })
+    const answer = await service.getConfiguration({ accountId: alice, visibility: 'members' })
+    expect(answer!.values['notices.digest']).toBe('weekly')
+    expect(answer!.provenance['notices.digest']).toEqual({ source: 'account' })
+    expect((await service.readForViewer({ subject: at(alice), tenantId: null, account: true })).values['notices.digest']).toBe('weekly')
+    // Changes to an account announce the identity and keys only.
+    expect((await events()).filter(event => event.type === 'configuration.changed').at(-1)!.data).toMatchObject({ scope: 'account', scopeId: alice, keys: ['notices.digest'] })
+  })
+
+  it('never shows or changes an account for anyone but its person, whatever they hold', async () => {
+    const personal = world.account(alice, tenantId)
+    world.account(bob, tenantId)
+    for (const permission of [VIEW, GROUP, TENANT, PLATFORM]) world.grant(bob, permission, personal)
+    const change = await request(alice, { scope: 'account' }, { 'notices.digest': 'never' })
+    expect(await fail(service.changes.get({ subject: at(bob), changeId: change.changeId }))).toEqual({ code: 'forbidden', reason: undefined })
+    // Bob's account is always his own: nothing of Alice's reaches him.
+    const own = await service.changes.readScope({ subject: at(bob), target: { scope: 'account' } })
+    expect(own.values).toEqual({})
+    expect(own.inForce.values['notices.digest']).toBeUndefined()
+    expect((await service.readForViewer({ subject: at(bob), tenantId: null, account: true })).values).not.toHaveProperty('notices.digest')
+    expect(await fail(service.changes.readScope({ subject: at(carol), target: { scope: 'account' } }))).toEqual({ code: 'forbidden', reason: undefined })
+    expect(await fail(request(carol, { scope: 'account' }, { 'notices.digest': 'daily' }))).toEqual({ code: 'forbidden', reason: undefined })
+    // Settings an account may not set are refused like any other scope's.
+    expect(await fail(request(alice, { scope: 'account' }, { 'site.tagline': 'x' }))).toEqual({ code: 'validation-failed', reason: 'not-settable-here' })
+  })
+
+  it('makes a person step up for a high account setting, waits out a recovery hold, and refuses service identities', async () => {
+    world.account(alice, tenantId)
+    expect(await fail(request(alice, { scope: 'account' }, { 'notices.webhook': 'https://hooks.example/a' }, { strength: 'weak' }))).toEqual({ code: 'insufficient-assurance', reason: undefined })
+    world.recoveryHolds.set(alice, new Date(time.getTime() + 24 * HOUR).toISOString())
+    const held = await request(alice, { scope: 'account' }, { 'notices.webhook': 'https://hooks.example/a' })
+    expect(held).toMatchObject({ route: 'none', status: 'delayed' })
+    time = new Date(time.getTime() + 25 * HOUR)
+    expect((await service.runMaintenance()).applied).toBe(1)
+    // A server value set in the account is shown to its person, never to a page reading values in force.
+    expect((await service.changes.readScope({ subject: at(alice), target: { scope: 'account' } })).values['notices.webhook']).toBe('https://hooks.example/a')
+    expect((await service.readForViewer({ subject: at(alice), tenantId: null, account: true })).values).not.toHaveProperty('notices.webhook')
+    const robot = id()
+    world.services.add(robot)
+    expect(await fail(request(robot, { scope: 'account' }, { 'notices.digest': 'daily' }))).toEqual({ code: 'forbidden', reason: undefined })
+  })
+
+  it('disposes of a closed identity\'s account and exports a person\'s own', async () => {
+    world.account(alice, tenantId)
+    world.account(bob, tenantId)
+    await request(alice, { scope: 'account' }, { 'notices.digest': 'weekly' })
+    await request(bob, { scope: 'account' }, { 'notices.digest': 'never' })
+    expect((await service.exportAccountData({ identityId: alice })).values).toEqual([expect.objectContaining({ key: 'notices.digest', value: 'weekly' })])
+    expect(await service.applyIdentityEvent({ eventId: id(), type: 'identity.closed', occurredAt: time.toISOString(), correlationId: correlation(), actorId: null, data: { identityId: alice, personalGroupId: null } })).toBe(true)
+    expect((await service.exportAccountData({ identityId: alice })).values).toEqual([])
+    expect((await service.exportAccountData({ identityId: bob })).values).toHaveLength(1)
+    expect((await events()).at(-1)).toMatchObject({ type: 'configuration.reset', data: { scope: 'account', scopeId: alice, reasonCode: 'account-closed' } })
   })
 
   it('relays the outbox in order, at least once', async () => {
