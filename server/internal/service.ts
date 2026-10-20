@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { z } from 'zod'
 import type {
   ConfigurationAccessDecision,
   ConfigurationCatalogue,
@@ -694,17 +695,38 @@ export function createConfigurationService(deps: ServiceDependencies) {
     confine(located.tenantId, input.tenantId)
     await requireViewer(located, subject)
     const stored = (await storedValues({ query }, [{ scope: located.scope, scopeId: located.scopeId }])).get(`${located.scope}:${located.scopeId}`)!
+    // Administrators see every value they may edit, `server` ones included.
     const inForce = located.scope === 'platform'
-      ? await getConfiguration({ visibility: 'members' })
-      : await getConfiguration({ ...(located.scope === 'tenant' ? { tenantId: located.scopeId } : { groupId: located.scopeId }), visibility: 'members' })
+      ? await getConfiguration({ visibility: 'server' })
+      : await getConfiguration({ ...(located.scope === 'tenant' ? { tenantId: located.scopeId } : { groupId: located.scopeId }), visibility: 'server' })
     const { rows } = await query(`select * from ${s}."change" where "scope" = $1 and "scope_id" = $2 and "status" in ('awaiting', 'delayed') order by "requested_at"`, [located.scope, located.scopeId])
     return {
+      viewerId: subject.identityId,
+      tenantId: located.tenantId,
+      target: input.target,
+      declarations: describeDeclarations(located.scope),
       values: stored,
       digests: Object.fromEntries(Object.entries(stored).map(([key, value]) => [key, valueDigest(value)!])),
       inForce,
       openChanges: await Promise.all((rows as unknown as ChangeRow[]).map(async row => view(row, await loadApprovals({ query }, row.change_id)))),
       closed: located.closed,
     }
+  }
+
+  /**
+   * The settings a scope may set, as a page needs them to build a form: each
+   * value's JSON Schema (its refinements stay on the server, which checks
+   * every value again).
+   */
+  function describeDeclarations(scope: ConfigurationScopeKind) {
+    return [...deps.catalogue().values()].filter(declaration => declaration.scopes.includes(scope) && !declaration.locked).map(declaration => ({
+      key: declaration.key,
+      risk: declaration.risk,
+      visibility: declaration.visibility,
+      sensitivity: declaration.sensitivity,
+      inherits: declaration.inherits ?? 'lineage',
+      schema: z.toJSONSchema(declaration.schema, { io: 'input', unrepresentable: 'any' }),
+    }))
   }
 
   /** §8: what applied changes did at a scope, newest first. */
