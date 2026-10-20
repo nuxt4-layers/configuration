@@ -282,10 +282,10 @@ Required ports fail closed: a failure is `unavailable` and records nothing. Ther
 |---|---|
 | `migrateConfigurationDatabase()` | Applies append-only migrations through the migration pool |
 | `getConfiguration({ tenantId?, groupId?, accountId?, keys?, visibility })` | Values in force with provenance (§4), up to the visibility asked; server code passes `server` |
-| `getConfigurationChanges()` | `request`, `decide`, `cancel`, `get` and `listForScope` (§6, §7); the endpoints and pages call it |
-| `listConfigurationHistory({ subject, scope, scopeId?, keys?, before?, limit? })` | §8 |
-| `exportConfiguration({ scope, scopeId? })` | A versioned document of a scope's values, for moving them between environments. Server-only |
-| `requestConfigurationImport({ subject, document, scope, scopeId?, justification, correlationId })` | Turns such a document into one pending change, with the approvals its highest key needs: importing never bypasses approvals. Server-only |
+| `getConfigurationChanges()` | `request`, `decide`, `cancel`, `get` and `readScope` (§6, §7, §5.1); the endpoints and pages call it |
+| `listConfigurationHistory({ subject, target, limit? })` | §8 |
+| `exportConfiguration({ scope })` | A versioned document of the values set at a platform, tenant or group scope (§12.2). Server-only |
+| `requestConfigurationImport({ subject, document, target, justification, correlationId })` | Turns such a document into one pending change (§12.2). Server-only |
 | `exportConfigurationTenantData({ tenantId })`, `disposeConfigurationTenant({ tenantId, correlationId })` | The tenant's part of tenant export and disposal (§14). Server-only |
 | `applyConfigurationIdentityEvent(event)` | The host's handler for Identity's relayed events (§14). Idempotent by event id. Server-only |
 | `syncConfigurationTenants(tenants)` | Records tenants that existed before the layer was installed, which no `tenant.created` will announce. Server-only |
@@ -304,6 +304,12 @@ provideAuthenticationSiteIdentity(async ({ tenantId }) => {
   return { siteName: answer.values['site.name'] }
 })
 ```
+
+### 12.2 Moving values between environments
+
+`exportConfiguration` answers `{ format: 'nuxt4-layers.configuration', version: 1, scope, exportedAt, values }`: the values set at that scope, and nothing that names where they came from. An account is never exported this way; a person's values are in their own export.
+
+`requestConfigurationImport` takes such a document and a target of the same kind of scope (`scope-mismatch` otherwise), and requests one change of the keys whose value differs there (`nothing-to-change` when none does), with each key's current digest as `expected`. It is an ordinary request (§6): the subject needs the scope's permission, every value is checked against the catalogue, and the riskiest key decides the approvals. Importing never bypasses them. Keys the document leaves out are left as they are.
 
 ## 13. HTTP API
 

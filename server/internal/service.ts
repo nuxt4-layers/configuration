@@ -10,6 +10,7 @@ import type {
   ConfigurationClock,
   ConfigurationConflictReason,
   ConfigurationDirectory,
+  ConfigurationDocument,
   ConfigurationEvent,
   ConfigurationGovernance,
   ConfigurationGovernedGroup,
@@ -17,6 +18,7 @@ import type {
   ConfigurationProvenance,
   ConfigurationRisk,
   ConfigurationScopeKind,
+  ConfigurationScopeReference,
   ConfigurationSubject,
   ConfigurationTenants,
   ConfigurationValues,
@@ -25,7 +27,10 @@ import type {
 } from '../../shared/contracts'
 import {
   canonicalJson,
+  changeTargetSchema,
+  CONFIGURATION_DOCUMENT_FORMAT,
   configurationChangeRequestSchema,
+  configurationDocumentSchema,
   configurationEventSchema,
   ConfigurationFailure,
   correlationIdSchema,
@@ -40,6 +45,7 @@ import {
   resolveConfiguration,
   riskRank,
   SCOPE_RISK_FLOOR,
+  scopeReferenceSchema,
   subjectSchema,
   VIEW_PERMISSION,
 } from '../../shared/contracts'
@@ -813,6 +819,47 @@ export function createConfigurationService(deps: ServiceDependencies) {
     }))
   }
 
+  /**
+   * §12.2: the values set at a platform, tenant or group scope, as a
+   * document for another environment. Server-only: the operator decides who
+   * may have it. An account is never exported this way.
+   */
+  async function exportScope(input: { scope: ConfigurationScopeReference }): Promise<ConfigurationDocument> {
+    const scope = parse(() => scopeReferenceSchema.parse(input.scope))
+    if (scope.scope === 'account') throw new ConfigurationFailure('validation-failed', 'account-not-exportable')
+    const scopeId = scope.scope === 'platform' ? '' : scope.scope === 'tenant' ? scope.tenantId : scope.groupId
+    const values = (await storedValues({ query }, [{ scope: scope.scope, scopeId }])).get(`${scope.scope}:${scopeId}`)!
+    if (Object.keys(values).length === 0) throw new ConfigurationFailure('validation-failed', 'nothing-set')
+    return { format: CONFIGURATION_DOCUMENT_FORMAT, version: 1, scope: scope.scope, exportedAt: now().toISOString(), values }
+  }
+
+  /**
+   * §12.2: turns a document into one pending change at a scope of the same
+   * kind, of the keys whose value differs there, with the approvals its
+   * riskiest key needs. Importing never bypasses approvals.
+   */
+  async function importDocument(input: { subject: ConfigurationSubject, document: unknown, target: ConfigurationChangeTarget, justification: { reasonCode: string, reference?: string }, correlationId: string }): Promise<ConfigurationChange> {
+    const subject = parse(() => subjectSchema.parse(input.subject)) as ConfigurationSubject
+    const document = parse(() => configurationDocumentSchema.parse(input.document))
+    const target = parse(() => changeTargetSchema.parse(input.target))
+    if (target.scope !== document.scope) throw new ConfigurationFailure('validation-failed', 'scope-mismatch')
+    const located = await locate(target, subject.identityId)
+    const { rows } = await query(`select "key", "value" from ${s}."value" where "scope" = $1 and "scope_id" = $2`, [located.scope, located.scopeId])
+    const current = new Map(rows.map(row => [row.key as string, row.value]))
+    const keys = Object.keys(document.values).filter(key => !current.has(key) || canonicalJson(current.get(key)) !== canonicalJson(document.values[key]))
+    if (keys.length === 0) throw new ConfigurationFailure('validation-failed', 'nothing-to-change')
+    return request({
+      subject,
+      request: {
+        target,
+        set: Object.fromEntries(keys.map(key => [key, document.values[key]])),
+        expected: Object.fromEntries(keys.map(key => [key, valueDigest(current.get(key))])),
+        justification: input.justification,
+      },
+      correlationId: input.correlationId,
+    })
+  }
+
   /** §8: what applied changes did at a scope, newest first. */
   async function listHistory(input: { subject: ConfigurationSubject, target: ConfigurationChangeTarget, limit?: number, tenantId?: string | null }) {
     const subject = parse(() => subjectSchema.parse(input.subject)) as ConfigurationSubject
@@ -991,6 +1038,8 @@ export function createConfigurationService(deps: ServiceDependencies) {
     tenantForHost,
     readForViewer,
     changes: { request, decide, cancel, get, readScope },
+    exportScope,
+    importDocument,
     listHistory,
     runMaintenance,
     relayOutbox,

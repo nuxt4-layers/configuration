@@ -98,6 +98,9 @@ export {
   subjectSchema,
 } from './changes'
 
+export type { ConfigurationDocument } from './documents'
+export { CONFIGURATION_DOCUMENT_FORMAT, configurationDocumentSchema } from './documents'
+
 export type { ConfigurationEvent, ConfigurationEventType } from './events'
 export { configurationEventSchema } from './events'
 
