@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
-import type { ConfigurationClock } from '../../contracts'
-import { ConfigurationFailure } from '../../contracts'
+import type { ConfigurationClock } from '../../shared/contracts'
+import { ConfigurationFailure } from '../../shared/contracts'
 
 /**
  * PRIVATE. Time and identifiers. Every time Configuration keeps or judges

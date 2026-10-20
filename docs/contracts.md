@@ -114,6 +114,10 @@ The lineage comes from Identity's directory port at every read (`bounded`) and e
 | Group `archived` or `orphaned` | Yes | No (`conflict`, `scope-read-only`) |
 | Tenant `closed`; group `deleted`; unknown | As if it did not exist: `forbidden` over HTTP, `null` to server code | No (`forbidden`) |
 
+### 4.1 Tenant by host name
+
+A request's tenant is the one whose `site.host-names` (a `high`, tenant-only, `server` setting) holds the request's host name, lower case and without port; no tenant matches → platform values only. A host name belongs to one tenant at most: a change claiming one another tenant holds is refused (`conflict`, `host-taken`), at request and again on applying. `X-Forwarded-Host` is read only when the host sets `NUXT_CONFIGURATION_TRUST_FORWARDED_HOST` behind its own proxy. Over HTTP, a request reaches only its own tenant's scopes and changes, and the platform's.
+
 ## 5. Visibility
 
 | Visibility | `platform` and `tenant` values | `group` values |
@@ -122,7 +126,7 @@ The lineage comes from Identity's directory port at every read (`bounded`) and e
 | `members` | A signed-in subject with a membership in effect in the tenant (for platform values, any signed-in subject) | A subject with a membership in effect in the group itself; membership of an ancestor is not enough |
 | `server` | Server functions only; never over HTTP | Likewise |
 
-A subject holding `configuration.settings:view` on the scope's governing group (§7.1) reads every value but `server` ones, to administer them. A host that wants a group's values public publishes them itself, from server code.
+A subject holding `configuration.settings:view` on the scope's governing group (§7.1) reads every value but `server` ones, to administer them. Group values are never served anonymously, and a group cannot opt in to it.
 
 There is no `secret` visibility. A secret is never a setting, whatever its visibility: the host keeps it in its secret store and passes it to the layer that uses it.
 
@@ -256,7 +260,7 @@ A change's risk is never below its permission's (§6, step 6). `high` and `criti
 | `ConfigurationTenants` | For `tenant` scope | Identity, through the host | Whether a tenant exists, and its state |
 | `ConfigurationGovernance` | For changes | Identity's access-governance port (`getIdentityAccessGovernance`), through the host | The governing group's parent, root, approval requirement and reference rule, safety periods in force, the requester's recovery hold and controlled identities; owners for the fallbacks |
 | `ConfigurationAccessDecision` | For changes and reading | Authorisation (`authorise`, `countAuthorisationQualifying`), through the host | Whether an identity holds a permission (§10) on a group now; how many others do, for the route; a permission's risk |
-| `ConfigurationSubjectResolver` | For the endpoints | Authentication, through the host | The signed-in subject for a request, with its `kind` and assurance (level, phishing resistance, `authenticatedAt`) |
+| `ConfigurationSubjectResolver` | For the endpoints | Authentication, through the host | The signed-in subject for a request, with its `kind` and assurance (level, phishing resistance, `authenticatedAt`), or `null` |
 | `ConfigurationPlatformGroup` | For `platform` scope changes | Host | The platform group's identifier |
 | `ConfigurationClock` | No: the system clock without it | Host (the suite's one clock) | The current time for expiries, delays, holds and retention |
 
@@ -294,14 +298,14 @@ Under `/api/configuration`. Endpoints take the subject only from the host's reso
 
 | Method and path | Access | Does |
 |---|---|---|
-| `GET /public` | Anyone | `public` platform and tenant values in force for the request's tenant (resolved by the host from the host name or path, never a free query parameter), with an `ETag` and a short `Cache-Control` |
+| `GET /public` | Anyone | `public` platform and tenant values in force for the request's tenant (§4.1), with an `ETag` and a short `Cache-Control` |
 | `GET /` | Signed in | Adds `members` values, and with `?groupId=` a group's values the subject may read (§5) |
-| `GET /admin/{scope}/{scopeId?}` | `configuration.settings:view` | Values, provenance, declarations and open changes, for editing |
+| `GET /admin?scope=…&groupId=…&governingGroupId=…` | `configuration.settings:view` | Values, provenance, declarations and open changes, for editing |
 | `POST /changes` | §6 | Requests a change |
 | `GET /changes/{changeId}` | §7.7 | One change, with its values for those who may decide it |
 | `POST /changes/{changeId}/decision` | §7.4 | Approves or rejects, with the digest shown |
 | `POST /changes/{changeId}/cancel` | The requester | Cancels |
-| `GET /admin/{scope}/{scopeId?}/history` | `configuration.settings:view` | §8 |
+| `GET /history?scope=…` | `configuration.settings:view` | §8 |
 
 Import, export, disposal, maintenance and the relay are never endpoints.
 
@@ -337,9 +341,7 @@ Not yet versioned. Contract version 1 follows the IAM members' rules: frozen for
 
 ## 17. Open questions
 
-1. **Tenant resolution.** How the host maps a request to a tenant (host name, path prefix, the signed-in subject's home tenant), and whether that mapping is itself a platform setting.
-2. **History retention.** Default and bounds for history and decided changes (proposed default 400 days, bounds 30 to 2,190).
-3. **Localised values.** Whether text settings hold one value or one per locale (`{ 'en-GB': …, 'cy-GB': … }`).
-4. **Tenants with several root groups.** Whether `tenant` scope should instead be governed by one designated root group per tenant, which needs Identity to name it.
-5. **Public group values.** Whether a group may opt in, through an approved change, to having its `public` values served anonymously (a public club page), and at what risk.
-6. **Membership.** Whether Configuration joins the IAM suite's processes formally (approvals scope, tenant lifecycle, group deletion) or stays a platform layer the host coordinates.
+1. **History retention.** Default and bounds for history and decided changes (proposed default 400 days, bounds 30 to 2,190).
+2. **Localised values.** Whether text settings hold one value or one per locale (`{ 'en-GB': …, 'cy-GB': … }`).
+3. **Tenants with several root groups.** Whether `tenant` scope should instead be governed by one designated root group per tenant, which needs Identity to name it.
+4. **Membership.** Whether Configuration joins the IAM suite's processes formally (approvals scope, tenant lifecycle, group deletion) or stays a platform layer the host coordinates.

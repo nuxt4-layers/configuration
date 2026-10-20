@@ -4,7 +4,7 @@ Nuxt 4 foundation layer for the facts a site states about itself and its organis
 
 A platform foundation layer, not a member of the Identity and Access Management (IAM) suite. It reaches [`identity`](https://github.com/nuxt4-layers/identity) and [`authorisation`](https://github.com/nuxt4-layers/authorisation) only through ports the host supplies, never imports them, and follows the suite's [approvals process](https://github.com/nuxt4-layers/iam-integration/blob/899befcf566775950c4b70b8cf0e7658be1000f9/docs/processes/approvals.md) for its own changes.
 
-**Status:** 0.1, phase 1 of the [roadmap](docs/roadmap.md): the contract and core (resolution, pending changes with approvals, storage, outbox) are built and tested; endpoints and pages are next. No contract version is released yet; see the [contract outline](docs/contracts.md).
+**Status:** 0.2, phase 2 of the [roadmap](docs/roadmap.md): the core, the HTTP API (tenant by host name), `useConfiguration()` and the public components are built and tested; the administration pages are next. No contract version is released yet; see the [contract outline](docs/contracts.md).
 
 ## Owns
 

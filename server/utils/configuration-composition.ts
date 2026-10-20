@@ -6,10 +6,11 @@ import type {
   ConfigurationDirectory,
   ConfigurationGovernance,
   ConfigurationSettingDeclaration,
+  ConfigurationSubjectResolver,
   ConfigurationTenants,
   ConfigurationValues,
-} from '../../contracts'
-import { buildConfigurationCatalogue, CONFIGURATION_SETTINGS, ConfigurationCompositionError, identifierSchema } from '../../contracts'
+} from '../../shared/contracts'
+import { buildConfigurationCatalogue, CONFIGURATION_SETTINGS, ConfigurationCompositionError, identifierSchema } from '../../shared/contracts'
 import { systemConfigurationClock } from '../internal/clock'
 
 /**
@@ -26,6 +27,7 @@ let governance: ConfigurationGovernance | null = null
 let access: ConfigurationAccessDecision | null = null
 let platformGroupId: string | null = null
 let clock: ConfigurationClock | null = null
+let subjectResolver: ConfigurationSubjectResolver | null = null
 let catalogue: ConfigurationCatalogue = buildConfigurationCatalogue(CONFIGURATION_SETTINGS)
 let deployment: ConfigurationValues = Object.freeze({})
 let version = 0
@@ -122,6 +124,13 @@ export function provideConfigurationPlatformGroup(groupId: string): void {
   changed()
 }
 
+/** The signed-in subject for an HTTP request, from Authentication through the host; `null` when nobody is signed in. */
+export function provideConfigurationSubjectResolver(next: ConfigurationSubjectResolver): void {
+  if (typeof next?.resolve !== 'function') throw new TypeError('provideConfigurationSubjectResolver expects an object with a resolve(event) function.')
+  subjectResolver = next
+  changed()
+}
+
 /** Optional: the suite's clock. Without it, the system clock. */
 export function provideConfigurationClock(next: ConfigurationClock): void {
   if (typeof next?.now !== 'function') throw new TypeError('provideConfigurationClock expects an object with a now() function.')
@@ -140,6 +149,7 @@ export const useConfigurationTenants = () => required(tenants, 'ConfigurationTen
 export const useConfigurationGovernance = () => required(governance, 'ConfigurationGovernance')
 export const useConfigurationAccessDecision = () => required(access, 'ConfigurationAccessDecision')
 export const useConfigurationPlatformGroup = () => required(platformGroupId, 'ConfigurationPlatformGroup')
+export const useConfigurationSubjectResolver = () => required(subjectResolver, 'ConfigurationSubjectResolver')
 export const useConfigurationClock = (): ConfigurationClock => clock ?? systemConfigurationClock
 export const useConfigurationCatalogue = (): ConfigurationCatalogue => catalogue
 export const useConfigurationDeployment = (): ConfigurationValues => deployment
@@ -153,6 +163,7 @@ export function clearConfigurationComposition(): void {
   access = null
   platformGroupId = null
   clock = null
+  subjectResolver = null
   catalogue = buildConfigurationCatalogue(CONFIGURATION_SETTINGS)
   deployment = Object.freeze({})
   changed()

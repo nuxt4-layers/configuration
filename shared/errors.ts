@@ -39,6 +39,7 @@ export const CONFIGURATION_CONFLICT_REASONS = [
   'not-governing',
   'permission-lost',
   'setting-changed',
+  'host-taken',
 ] as const
 
 export type ConfigurationConflictReason = typeof CONFIGURATION_CONFLICT_REASONS[number]

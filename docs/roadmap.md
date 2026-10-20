@@ -13,10 +13,10 @@ The layer is specified before it is built. Each phase keeps the [contract outlin
 - Resolution with provenance through the group lineage; pending changes, approvals, routes and re-checks on applying; maintenance and the relay.
 - Tests proving: no undeclared key is stored; no inherited value confers access; a `high` change never applies without a second person or a published delay; an approval is bound to the digest; a change made against stale values is rejected; a service identity never requests or decides; no event carries a value.
 
-## Phase 2: endpoints and presentation (next)
+## Phase 2: endpoints and presentation (in progress)
 
-- Decide the contract's open questions §17.1 (tenant resolution) and §17.5 (public group values), which the endpoints need.
-- `/api/configuration/*`, `useConfiguration()`, `useConfigurationHead()`, the `Configuration*` components and the administration and pending-changes pages, with axe in light and dark mode.
+- Done: tenant by host name, `/api/configuration/*`, `useConfiguration()`, `useConfigurationHead()`, the public `Configuration*` components, and a playground host.
+- Next: the administration and pending-changes pages, styled through Theme Manager's vocabulary, with axe in light and dark mode.
 
 ## Phase 3: composition
 
