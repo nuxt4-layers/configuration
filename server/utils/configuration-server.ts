@@ -1,4 +1,4 @@
-import type { ConfigurationChangeTarget, ConfigurationEvent, ConfigurationSubject, ConfigurationVisibility } from '../../shared/contracts'
+import type { ConfigurationChangeTarget, ConfigurationEvent, ConfigurationScopeReference, ConfigurationSubject, ConfigurationVisibility } from '../../shared/contracts'
 import { ConfigurationCompositionError, ConfigurationFailure } from '../../shared/contracts'
 import { runConfigurationMigrations } from '../database/migrations'
 import type { ConfigurationService } from '../internal/service'
@@ -86,6 +86,16 @@ export function getConfigurationChanges() {
 
 export function listConfigurationHistory(input: { subject: ConfigurationSubject, target: ConfigurationChangeTarget, limit?: number, tenantId?: string | null }) {
   return service().listHistory(input)
+}
+
+/** Server-only: the values set at a platform, tenant or group scope, as a document for another environment. */
+export function exportConfiguration(input: { scope: ConfigurationScopeReference }) {
+  return service().exportScope(input)
+}
+
+/** Server-only: a document as one pending change, with the approvals its riskiest key needs. */
+export function requestConfigurationImport(input: { subject: ConfigurationSubject, document: unknown, target: ConfigurationChangeTarget, justification: { reasonCode: string, reference?: string }, correlationId: string }) {
+  return service().importDocument(input)
 }
 
 /** Server-only: expiry, delayed changes and retention. */

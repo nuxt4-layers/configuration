@@ -447,6 +447,36 @@ describe.skipIf(!hasDatabase)('Pending changes and approvals (PostgreSQL)', () =
     expect((await events()).at(-1)).toMatchObject({ type: 'configuration.reset', data: { scope: 'account', scopeId: alice, reasonCode: 'account-closed' } })
   })
 
+  it('moves a scope\'s values to another as a document, through the same approvals', async () => {
+    world.grant(alice, GROUP, child)
+    world.grant(alice, GROUP, root)
+    world.grant(bob, GROUP, root)
+    await request(alice, groupTarget(child), { 'site.tagline': 'Exported', 'social.links': [{ network: 'github', url: 'https://github.com/acme' }] })
+    const document = await service.exportScope({ scope: { scope: 'group', groupId: child } })
+    expect(document).toMatchObject({ format: 'nuxt4-layers.configuration', version: 1, scope: 'group', values: { 'site.tagline': 'Exported' } })
+    // A document carries no identifiers of where it came from.
+    expect(JSON.stringify(document)).not.toContain(child)
+
+    await request(alice, groupTarget(root), { 'site.tagline': 'Exported' })
+    const imported = await service.importDocument({ subject: at(alice), document, target: groupTarget(root), justification: { reasonCode: 'update' }, correlationId: correlation() })
+    // Only what differs is requested, and it applies at once at low risk.
+    expect(imported).toMatchObject({ keys: ['social.links'], status: 'applied' })
+    expect(await fail(service.importDocument({ subject: at(alice), document, target: groupTarget(root), justification: { reasonCode: 'update' }, correlationId: correlation() }))).toEqual({ code: 'validation-failed', reason: 'nothing-to-change' })
+
+    // A high-risk key still needs a second person; nobody without the permission imports anything.
+    const legal = { ...document, values: { 'organisation.legal-name': 'Imported Ltd' } }
+    expect(await service.importDocument({ subject: at(alice), document: legal, target: groupTarget(root), justification: { reasonCode: 'update' }, correlationId: correlation() })).toMatchObject({ status: 'awaiting', route: 'approvers' })
+    expect(await fail(service.importDocument({ subject: at(carol), document: legal, target: groupTarget(root), justification: { reasonCode: 'update' }, correlationId: correlation() }))).toEqual({ code: 'forbidden', reason: undefined })
+
+    // Malformed documents, another kind of scope and undeclared keys are refused, naming only the problem.
+    const attempt = (doc: unknown, target: ConfigurationChangeTarget = groupTarget(root)) => fail(service.importDocument({ subject: at(alice), document: doc, target, justification: { reasonCode: 'update' }, correlationId: correlation() }))
+    expect(await attempt({ ...document, version: 2 })).toEqual({ code: 'validation-failed', reason: 'unsupported-version' })
+    expect(await attempt(document, { scope: 'platform' })).toEqual({ code: 'validation-failed', reason: 'scope-mismatch' })
+    expect(await attempt({ ...document, values: { 'shop.currency': 'GBP' } })).toEqual({ code: 'validation-failed', reason: 'unknown-setting' })
+    expect(await fail(service.exportScope({ scope: { scope: 'group', groupId: id() } }))).toEqual({ code: 'validation-failed', reason: 'nothing-set' })
+    expect(await fail(service.exportScope({ scope: { scope: 'account', identityId: alice } }))).toEqual({ code: 'validation-failed', reason: 'account-not-exportable' })
+  })
+
   it('relays the outbox in order, at least once', async () => {
     world.grant(alice, GROUP, child)
     await request(alice, groupTarget(child), { 'site.tagline': 'x' })
