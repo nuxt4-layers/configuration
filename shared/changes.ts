@@ -73,6 +73,12 @@ export const subjectSchema = z.strictObject({
   assurance: z.strictObject({ level: z.enum(['aal1', 'aal2', 'aal3']), phishingResistant: z.boolean(), authenticatedAt: instantSchema }),
 })
 
+/**
+ * How long history of `possibly-personal` keys and decided changes are kept
+ * (docs/contracts.md §8): the default, and the bounds a host may choose within.
+ */
+export const CONFIGURATION_RETENTION = Object.freeze({ defaultDays: 400, minimumDays: 30, maximumDays: 2190 })
+
 /** How recently a `critical` change's requester or approver must have authenticated. */
 export const CRITICAL_FRESHNESS_MINUTES = 15
 

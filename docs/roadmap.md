@@ -23,3 +23,8 @@ The layer is specified before it is built. Each phase keeps the [contract outlin
 - Done: composed with the real members in `steve-r-lewis/platform-test-harness`; the platform's own host name administers what Authorisation allows.
 - Done: a person's own `account` scope (personal-group sovereignty, disposed of on closure); administrators see only their scope's own settings; the platform's settings are read only by those who may change them.
 - Done: `exportConfiguration` and `requestConfigurationImport`, moving a scope's values between environments as one ordinary pending change; in the harness, the layer's outbox relayed and its part in the tenant export.
+
+## Phase 4: contract version 1 (in progress)
+
+- Done: the open questions decided (docs/contracts.md §17); history retention a host chooses within 30 to 2,190 days (`provideConfigurationRetention`), tested against the database; `CONFIGURATION_CONTRACT_VERSION = 1`, with version 1's exports and catalogue risks pinned by tests; the package at 1.0.0.
+- Next, for the owner: tag `v1.0.0`, and pin the harness to the tag.

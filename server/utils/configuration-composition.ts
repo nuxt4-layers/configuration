@@ -10,7 +10,7 @@ import type {
   ConfigurationTenants,
   ConfigurationValues,
 } from '../../shared/contracts'
-import { buildConfigurationCatalogue, CONFIGURATION_SETTINGS, ConfigurationCompositionError, identifierSchema } from '../../shared/contracts'
+import { buildConfigurationCatalogue, CONFIGURATION_RETENTION, CONFIGURATION_SETTINGS, ConfigurationCompositionError, identifierSchema } from '../../shared/contracts'
 import { systemConfigurationClock } from '../internal/clock'
 
 /**
@@ -30,6 +30,7 @@ let clock: ConfigurationClock | null = null
 let subjectResolver: ConfigurationSubjectResolver | null = null
 let catalogue: ConfigurationCatalogue = buildConfigurationCatalogue(CONFIGURATION_SETTINGS)
 let deployment: ConfigurationValues = Object.freeze({})
+let retentionDays: number = CONFIGURATION_RETENTION.defaultDays
 let version = 0
 
 const NAME = /^[a-z_][a-z0-9_]{0,62}$/
@@ -135,6 +136,20 @@ export function provideConfigurationSubjectResolver(next: ConfigurationSubjectRe
   changed()
 }
 
+/**
+ * Optional: how many days history of `possibly-personal` keys and decided
+ * changes are kept, within the contract's bounds (30 to 2,190). Without it,
+ * 400. A value outside the bounds is refused at start-up.
+ */
+export function provideConfigurationRetention(input: { days: number }): void {
+  const { minimumDays, maximumDays } = CONFIGURATION_RETENTION
+  if (!Number.isInteger(input?.days) || input.days < minimumDays || input.days > maximumDays) {
+    throw new TypeError(`provideConfigurationRetention expects whole days from ${minimumDays} to ${maximumDays}.`)
+  }
+  retentionDays = input.days
+  changed()
+}
+
 /** Optional: the suite's clock. Without it, the system clock. */
 export function provideConfigurationClock(next: ConfigurationClock): void {
   if (typeof next?.now !== 'function') throw new TypeError('provideConfigurationClock expects an object with a now() function.')
@@ -158,6 +173,7 @@ export const useConfigurationSubjectResolver = () => required(subjectResolver, '
 export const useConfigurationClock = (): ConfigurationClock => clock ?? systemConfigurationClock
 export const useConfigurationCatalogue = (): ConfigurationCatalogue => catalogue
 export const useConfigurationDeployment = (): ConfigurationValues => deployment
+export const useConfigurationRetention = (): number => retentionDays
 
 /** Test helper: removes every supplied port and declaration. */
 export function clearConfigurationComposition(): void {
@@ -171,5 +187,6 @@ export function clearConfigurationComposition(): void {
   subjectResolver = null
   catalogue = buildConfigurationCatalogue(CONFIGURATION_SETTINGS)
   deployment = Object.freeze({})
+  retentionDays = CONFIGURATION_RETENTION.defaultDays
   changed()
 }

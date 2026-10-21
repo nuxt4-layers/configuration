@@ -28,6 +28,7 @@ import type {
 import {
   canonicalJson,
   changeTargetSchema,
+  CONFIGURATION_RETENTION,
   CONFIGURATION_DOCUMENT_FORMAT,
   configurationChangeRequestSchema,
   configurationDocumentSchema,
@@ -188,7 +189,7 @@ function changeDigest(row: Pick<ChangeRow, 'scope' | 'scope_id' | 'tenant_id' | 
 
 export function createConfigurationService(deps: ServiceDependencies) {
   const s = quoteSchema(deps.schema)
-  const retentionDays = deps.retentionDays ?? 400
+  const retentionDays = deps.retentionDays ?? CONFIGURATION_RETENTION.defaultDays
   const now = (): Date => timeFrom(deps.clock())
 
   async function transaction<T>(run: (client: Client) => Promise<T>): Promise<T> {
