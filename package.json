@@ -1,6 +1,6 @@
 {
-  "name": "@nuxt4-layers/configuration-service",
-  "version": "1.0.0",
+  "name": "@nuxt4-layers/configuration",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Nuxt 4 foundation layer for the facts a site, a tenant or a group states about itself, changed only through approved pending changes.",

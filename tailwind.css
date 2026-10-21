@@ -1,5 +1,5 @@
 /*
- * Tailwind source registration for @nuxt4-layers/configuration-service.
+ * Tailwind source registration for @nuxt4-layers/configuration.
  *
  * The layer's components use the SemanticPresentationTheme utility vocabulary
  * (bg-fill-*, text-pen-*, border-edge-*). Tailwind does not scan installed
@@ -7,7 +7,7 @@
  * Tailwind, e.g.:
  *
  *   @import "@nuxt4-layers/theme-manager/presentation.css";
- *   @import "@nuxt4-layers/configuration-service/tailwind.css";
+ *   @import "@nuxt4-layers/configuration/tailwind.css";
  */
 @source "./app/components";
 @source "./app/configuration-pages";
