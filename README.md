@@ -4,7 +4,7 @@ Nuxt 4 foundation layer for the facts a site states about itself and its organis
 
 A platform foundation layer, not a member of the Identity and Access Management (IAM) suite. It reaches [`identity`](https://github.com/nuxt4-layers/identity) and [`authorisation`](https://github.com/nuxt4-layers/authorisation) only through ports the host supplies, never imports them, and follows the suite's [approvals process](https://github.com/nuxt4-layers/iam-integration/blob/899befcf566775950c4b70b8cf0e7658be1000f9/docs/processes/approvals.md) for its own changes.
 
-**Status:** 1.1.0, contract version 1 ([contract](docs/contracts.md), [roadmap](docs/roadmap.md)): the core, the HTTP API (tenant by host name), `useConfiguration()`, the public components, the administration pages, accounts, export and import, and composition with the IAM members through the layer's own adapters, proven in the platform test harness. From 1.1.0 the package is `@nuxt4-layers/configuration`, named after its repository like every other layer (1.0.0 was published as `@nuxt4-layers/configuration-service`).
+**Status:** 1.2.0, contract version 1 ([contract](docs/contracts.md), [roadmap](docs/roadmap.md)): the core, the HTTP API (tenant by host name), `useConfiguration()`, the public components, the administration pages, accounts, export and import, and composition with the IAM members through the layer's own adapters, proven in the platform test harness. From 1.1.0 the package is `@nuxt4-layers/configuration`, named after its repository like every other layer (1.0.0 was published as `@nuxt4-layers/configuration-service`). 1.2.0 adds `contact.security`, the contact a site's `security.txt` names.
 
 ## Owns
 

@@ -53,6 +53,8 @@ const VERSION_1_RISKS: Record<string, contracts.ConfigurationRisk> = {
   'organisation.postal-address': 'medium',
   'contact.general': 'medium',
   'contact.data-protection': 'high',
+  // 1.2.0
+  'contact.security': 'high',
   'social.links': 'low',
   'legal.links': 'high',
   'seo.description': 'low',
@@ -93,13 +95,13 @@ describe('Configuration public contract', () => {
   })
 
   it('marks what a regulator, customer or court relies on as high risk', () => {
-    for (const key of ['organisation.legal-name', 'organisation.registration', 'organisation.tax-number', 'organisation.registered-address', 'legal.links', 'contact.data-protection']) {
+    for (const key of ['organisation.legal-name', 'organisation.registration', 'organisation.tax-number', 'organisation.registered-address', 'legal.links', 'contact.data-protection', 'contact.security']) {
       expect(catalogue.get(key)!.risk, key).toBe('high')
     }
   })
 
   it('marks addresses and contact points as possibly personal', () => {
-    for (const key of ['organisation.registered-address', 'organisation.postal-address', 'contact.general', 'contact.data-protection']) {
+    for (const key of ['organisation.registered-address', 'organisation.postal-address', 'contact.general', 'contact.data-protection', 'contact.security']) {
       expect(catalogue.get(key)!.sensitivity, key).toBe('possibly-personal')
     }
   })
@@ -177,6 +179,33 @@ describe('Setting values', () => {
     expect(check('contact.data-protection', { name: 'Jane Smith' }).success).toBe(false)
     expect(check('social.links', [{ network: 'mastodon', url: 'https://mastodon.social/@acme' }]).success).toBe(true)
     expect(check('social.links', [{ network: 'myspace', url: 'https://myspace.com/acme' }]).success).toBe(false)
+  })
+
+  it('takes a security contact as security.txt (RFC 9116) needs it: somewhere to report, the rest optional', () => {
+    const security = (value: unknown) => check('contact.security', value).success
+    expect(security({ email: 'security@example.org' })).toBe(true)
+    expect(security({
+      url: 'https://example.org/report',
+      policy: '/security',
+      encryption: 'https://example.org/pgp-key.txt',
+      acknowledgements: 'https://example.org/thanks',
+      preferredLanguages: ['en-GB', 'cy-GB'],
+    })).toBe(true)
+    // Somewhere to report is required; a policy alone is not one.
+    expect(security({})).toBe(false)
+    expect(security({ policy: '/security' })).toBe(false)
+    expect(security({ email: 'not an address' })).toBe(false)
+    expect(security({ url: 'http://example.org/report' })).toBe(false)
+    expect(security({ email: 'security@example.org', policy: 'javascript:alert(1)' })).toBe(false)
+    expect(security({ email: 'security@example.org', encryption: '/key.txt' })).toBe(false)
+    expect(security({ email: 'security@example.org', preferredLanguages: ['English'] })).toBe(false)
+    expect(security({ email: 'security@example.org', preferredLanguages: Array.from({ length: 11 }, () => 'en') })).toBe(false)
+    expect(security({ email: 'security@example.org', name: 'Jane Smith' })).toBe(false)
+  })
+
+  it('sets the security contact for a site, never for a group', () => {
+    expect(catalogue.get('contact.security')!.scopes).toEqual(['platform', 'tenant'])
+    expect(catalogue.get('contact.security')!.visibility).toBe('public')
   })
 
   it('needs exactly one placeholder in the title template', () => {

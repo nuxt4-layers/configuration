@@ -63,13 +63,14 @@ Declarations are registered once at start-up (`provideConfigurationCatalogue`). 
 | `organisation.postal-address` | Postal address (§3.3) | platform, tenant, group | public | possibly-personal | `medium` |
 | `contact.general` | `{ email?, phone?, url? }`: an organisational mailbox, E.164 number or page | platform, tenant, group | public | possibly-personal | `medium` |
 | `contact.data-protection` | As `contact.general`, plus an optional `identityId` shown through Profile | platform, tenant, group | public | possibly-personal | `high` |
+| `contact.security` | Where vulnerabilities are reported, as a site's `security.txt` (RFC 9116) needs: `{ email?, phone?, url? }` (one at least), and optionally `policy`, `encryption` (an `https` key), `acknowledgements` and up to 10 `preferredLanguages`. Added in 1.2.0 | platform, tenant | public | possibly-personal | `high` |
 | `social.links` | Up to 20 `{ network, url }`; `network` a registered code (`mastodon`, `linkedin`, `github`, …, `other`) | platform, tenant, group | public | organisational | `low` |
 | `legal.links` | `{ privacy, terms, cookies, accessibility, modern-slavery? }`: each an `https` URL or a site-relative path | platform, tenant, group | public | organisational | `high` |
 | `seo.description` | Safe text, up to 300 | platform, tenant, group | public | organisational | `low` |
 | `seo.image` | `{ assetId, alt }` | platform, tenant, group | public | organisational | `low` |
 | `seo.title-template` | Safe text containing `%s` once, up to 80 | platform, tenant | public | organisational | `low` |
 
-`high` marks what a regulator, customer or court relies on: the legal entity, its registration and registered address, the legal pages and the data-protection contact. Changing one of those wrongly misrepresents the organisation, so it needs a second person (§7).
+`high` marks what a regulator, customer or court relies on: the legal entity, its registration and registered address, the legal pages and the data-protection contact. The security contact is `high` too: whoever can change it receives the reports of vulnerabilities. Changing one of those wrongly misrepresents the organisation, so it needs a second person (§7).
 
 A group's `organisation.*` settings describe a group that is itself a legal entity or trades separately (a subsidiary, a franchise, a charity's trading arm). Groups that are not leave them unset and inherit.
 

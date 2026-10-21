@@ -29,3 +29,4 @@ The layer is specified before it is built. Each phase keeps the [contract outlin
 - Done: the open questions decided (docs/contracts.md §17); history retention a host chooses within 30 to 2,190 days (`provideConfigurationRetention`), tested against the database; `CONFIGURATION_CONTRACT_VERSION = 1`, with version 1's exports and catalogue risks pinned by tests; the package at 1.0.0.
 - Done: tagged `v1.0.0` and pinned in the harness.
 - 1.1.0: the package renamed `@nuxt4-layers/configuration` after its repository, so a host composing local folders finds it at `../configuration` like every other layer. Contract version 1 is unchanged; hosts change only the package name in their dependency, `extends` and imports.
+- 1.2.0: `contact.security`, where vulnerabilities are reported (a site's `security.txt`, RFC 9116), `high` and for platform and tenant only. Contract version 1 is unchanged: an added setting is a minor release (contracts.md §16).

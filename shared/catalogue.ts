@@ -65,6 +65,24 @@ export const CONFIGURATION_SETTINGS: readonly ConfigurationSettingDeclaration[] 
     risk: 'high',
   }),
   defineConfigurationSetting({
+    key: 'contact.security',
+    // Where vulnerabilities are reported: a site's security.txt (RFC 9116). Whoever
+    // can change it receives the reports, hence `high`. A site's, never a group's.
+    schema: z.strictObject({
+      email: emailSchema.optional(),
+      phone: phoneNumberSchema.optional(),
+      url: httpsUrlSchema.optional(),
+      policy: linkSchema.optional(),
+      encryption: httpsUrlSchema.optional(),
+      acknowledgements: linkSchema.optional(),
+      preferredLanguages: z.array(localeSchema).max(10).optional(),
+    }).refine(value => value.email !== undefined || value.phone !== undefined || value.url !== undefined, 'empty-contact'),
+    scopes: ABOVE_GROUPS,
+    visibility: 'public',
+    sensitivity: 'possibly-personal',
+    risk: 'high',
+  }),
+  defineConfigurationSetting({
     key: 'social.links',
     schema: z.array(z.strictObject({ network: z.enum(SOCIAL_NETWORKS, { error: 'unknown-network' }), url: linkSchema })).max(20),
     scopes: ALL,
