@@ -2,7 +2,7 @@
 export const CONFIGURATION_CONTRACT_VERSION = 1
 
 /**
- * Public contract for `@nuxt4-layers/configuration-service`.
+ * Public contract for `@nuxt4-layers/configuration`.
  *
  * The only supported cross-layer import path for Configuration's types and
  * pure helpers. It imports nothing but `zod`.

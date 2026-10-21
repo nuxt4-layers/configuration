@@ -26,7 +26,7 @@ const PAGES: { key: keyof ConfigurationPagePaths, file: string }[] = [
 ]
 
 export default defineNuxtModule<ConfigurationModuleOptions>({
-  meta: { name: '@nuxt4-layers/configuration-service/pages', configKey: 'configuration' },
+  meta: { name: '@nuxt4-layers/configuration/pages', configKey: 'configuration' },
   defaults: {
     pages: { enabled: true, paths: { settings: '/configuration', changes: '/configuration/changes' } },
     signIn: '/sign-in',

@@ -1,5 +1,5 @@
 /**
- * Nuxt layer entry point for `@nuxt4-layers/configuration-service`.
+ * Nuxt layer entry point for `@nuxt4-layers/configuration`.
  *
  * Hosts compose this layer by package name from `extends` and supply the
  * ports from a Nitro plugin with the `provideConfiguration*` functions.

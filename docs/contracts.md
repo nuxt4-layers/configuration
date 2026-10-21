@@ -1,6 +1,6 @@
 # Configuration Contract (version 1)
 
-`@nuxt4-layers/configuration-service/contracts` will be the only supported import path for this capability's types and pure helpers. It imports nothing but `zod`: no Nuxt, Vue, h3, server code, driver or other `@nuxt4-layers/*` package.
+`@nuxt4-layers/configuration/contracts` is the only supported import path for this capability's types and pure helpers. It imports nothing but `zod`: no Nuxt, Vue, h3, server code, driver or other `@nuxt4-layers/*` package.
 
 Configuration answers one question: **what does this site, this tenant or this group say about itself, now?** It holds organisational facts only. This is contract version 1 (§16): section numbers are stable, and the questions left open while it was drafted are decided in §17.
 
@@ -351,7 +351,7 @@ The host relays Identity's events to `applyConfigurationIdentityEvent`, which ap
 
 ## 15. Presentation
 
-Components, composables and pages live in `app/` and reach the server only through `useConfiguration()` and `useConfigurationAdministration()`. They decide nothing. Text comes from `app/configuration-messages.ts` through `useConfigurationText()`; hosts override wording in `app.config.ts` under `configuration.messages`. Styling uses only Theme Manager's SemanticPresentationTheme vocabulary (`configurationClasses`), as Profile's, Identity's and Authorisation's pages do; hosts add `@nuxt4-layers/configuration-service/tailwind.css` to their stylesheet.
+Components, composables and pages live in `app/` and reach the server only through `useConfiguration()` and `useConfigurationAdministration()`. They decide nothing. Text comes from `app/configuration-messages.ts` through `useConfigurationText()`; hosts override wording in `app.config.ts` under `configuration.messages`. Styling uses only Theme Manager's SemanticPresentationTheme vocabulary (`configurationClasses`), as Profile's, Identity's and Authorisation's pages do; hosts add `@nuxt4-layers/configuration/tailwind.css` to their stylesheet.
 
 - Public: `useConfiguration()`, `useConfigurationHead()`, and `ConfigurationSiteName`, `ConfigurationOrganisationDetails`, `ConfigurationContact`, `ConfigurationSocialLinks`, `ConfigurationLegalLinks` (plain semantic markup).
 - Administration pages, registered by `modules/configuration-pages.ts` (`configuration: { pages: { enabled, paths: { settings, changes } }, signIn }` in the host's `nuxt.config.ts`; by default `/configuration` and `/configuration/changes`, scoped by `?scope=platform`, `?scope=tenant&governingGroupId=…` or `?scope=group&groupId=…`). Each setting shows its value in force, where it comes from and its risk; its form is built from the value's JSON Schema, so a host's own settings get one too. Saving requests a change and says whether it applied or awaits approval, by whom and until when. The changes page shows what each open change would do beside what is there now; others may approve or reject, the requester may withdraw. The pages are never framed, cached or sent as a Referer.
